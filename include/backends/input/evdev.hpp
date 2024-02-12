@@ -1,5 +1,5 @@
 /*
- * Copyright © 2022 Codethink Ltd.
+ * Copyright © 2024 Codethink Ltd.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -44,7 +44,7 @@ struct ev_dev_backend_t : qad_backend_input_t<ev_dev_backend_t> {
            send_syn_event(file_descriptor);
   }
 
-  static int button_impl(int const value, int const event) {
+  static bool button_impl(int const value, int const event) {
     auto_close_fd_t file_descriptor(create_file_descriptor(event));
     int tracking_event = 100;
     if (value == 0)
@@ -55,25 +55,25 @@ struct ev_dev_backend_t : qad_backend_input_t<ev_dev_backend_t> {
            send_syn_event(file_descriptor);
   }
 
-  static int touch_impl(int const x, int const y, int const duration,
-                        int const event) {
+  static bool touch_impl(int const x, int const y, int const duration,
+                         int const event) {
     auto_close_fd_t file_descriptor(create_file_descriptor(event));
     return send_touch(x, y, duration, event);
   }
 
-  static int swipe_impl(int const x1, int const y1, int const x2, int const y2,
-                        int const velocity, int const event) {
+  static bool swipe_impl(int const x1, int const y1, int const x2, int const y2,
+                         int const velocity, int const event) {
     auto_close_fd_t file_descriptor(create_file_descriptor(event));
     return send_swipe(x1, y1, x2, y2, velocity, file_descriptor);
   }
 
-  static int key_impl(int const key, int const event) {
+  static bool key_impl(int const key, int const event) {
     auto_close_fd_t fd(create_file_descriptor(event));
     QAD_CHECK_ERR(send_key_event(key, fd))
     return send_syn_event(fd);
   }
 
-  static int text_impl(std::vector<int> const &key_codes, int const event) {
+  static bool text_impl(std::vector<int> const &key_codes, int const event) {
     auto_close_fd_t fd(create_file_descriptor(event));
     QAD_CHECK_ERR(send_text_event(key_codes, fd))
     return true;

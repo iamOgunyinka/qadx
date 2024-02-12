@@ -88,6 +88,6 @@ int main(int argc, char **argv) {
   if (!(*server_instance))
     return EXIT_FAILURE;
   server_instance->run();
-
+  io_context.run();
   return 0;
 }

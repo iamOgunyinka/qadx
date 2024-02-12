@@ -29,6 +29,8 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/beast/http/read.hpp>
 #include <boost/beast/http/write.hpp>
+#include <fstream>
+#include <random>
 #include <spdlog/spdlog.h>
 
 #define CONTENT_TYPE_JSON "application/json"
@@ -190,7 +192,6 @@ std::shared_ptr<session_t> session_t::add_endpoint_interfaces() {
                            verb::post);
   m_endpoints.add_endpoint(
       "/screen", JSON_ROUTE_CALLBACK(screen_request_handler), verb::get);
-
   return shared_from_this();
 }
 
@@ -214,14 +215,14 @@ input_variant_t session_t::get_input_object() const {
     return uinput_backend_t();
 }
 
-void session_t::move_mouse_request_handler(const qad::string_request_t &request,
-                                           const qad::url_query_t &) {
+void session_t::move_mouse_request_handler(string_request_t const &request,
+                                           url_query_t const &) {
   try {
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto x_iter = json_root.find("x");
     auto y_iter = json_root.find("y");
     auto event_iter = json_root.find("event");
-    if (!utils::any_element_is_invalid(json_root, x_iter, y_iter, event_iter)) {
+    if (utils::any_element_is_invalid(json_root, x_iter, y_iter, event_iter)) {
       return error_handler(
           bad_request("x/y axis or event is not found", request));
     }
@@ -241,13 +242,13 @@ void session_t::move_mouse_request_handler(const qad::string_request_t &request,
   }
 }
 
-void session_t::button_request_handler(const string_request_t &request,
-                                       const url_query_t &) {
+void session_t::button_request_handler(string_request_t const &request,
+                                       url_query_t const &) {
   try {
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto event_iter = json_root.find("event");
     auto value_iter = json_root.find("value");
-    if (!utils::any_element_is_invalid(json_root, value_iter, event_iter)) {
+    if (utils::any_element_is_invalid(json_root, value_iter, event_iter)) {
       return error_handler(bad_request("event or value is not found", request));
     }
     auto const event = event_iter->second.get<json::number_integer_t>();
@@ -266,35 +267,222 @@ void session_t::button_request_handler(const string_request_t &request,
   }
 }
 
-void session_t::touch_request_handler(const string_request_t &request,
-                                      const url_query_t &) {
-  //
+void session_t::touch_request_handler(string_request_t const &request,
+                                      url_query_t const &) {
+  try {
+    auto const json_root = json::parse(request.body()).get<json::object_t>();
+    auto x_iter = json_root.find("x");
+    auto y_iter = json_root.find("y");
+    auto event_iter = json_root.find("event");
+    auto duration_iter = json_root.find("duration");
+    if (utils::any_element_is_invalid(json_root, x_iter, y_iter, event_iter,
+                                      duration_iter)) {
+      return error_handler(
+          bad_request("x, y, duration or event is not found", request));
+    }
+    auto const x = x_iter->second.get<json::number_integer_t>();
+    auto const y = y_iter->second.get<json::number_integer_t>();
+    auto const event = event_iter->second.get<json::number_integer_t>();
+    auto const duration = duration_iter->second.get<json::number_integer_t>();
+    std::visit(
+        [x, y, event, duration, request,
+         self = shared_from_this()](auto &&input_object) {
+          if (input_object.touch_impl(x, y, duration, event))
+            return self->send_response(self->json_success("OK", request));
+          self->error_handler(self->server_error("Error", request));
+        },
+        get_input_object());
+  } catch (std::exception const &e) {
+    spdlog::error(e.what());
+    return error_handler(bad_request(e.what(), request));
+  }
 }
 
-void session_t::key_request_handler(const string_request_t &,
-                                    const url_query_t &) {
-  //
+void session_t::key_request_handler(string_request_t const &request,
+                                    url_query_t const &) {
+  try {
+    auto const json_root = json::parse(request.body()).get<json::object_t>();
+    auto key_iter = json_root.find("key");
+    auto event_iter = json_root.find("event");
+    if (utils::any_element_is_invalid(json_root, key_iter, event_iter)) {
+      return error_handler(bad_request("event or value is not found", request));
+    }
+    auto const event = event_iter->second.get<json::number_integer_t>();
+    auto const key = key_iter->second.get<json::number_integer_t>();
+    std::visit(
+        [key, event, request, self = shared_from_this()](auto &&input_object) {
+          if (input_object.key_impl(key, event))
+            return self->send_response(self->json_success("OK", request));
+          self->error_handler(self->server_error("Error", request));
+        },
+        get_input_object());
+  } catch (std::exception const &e) {
+    spdlog::error(e.what());
+    return error_handler(bad_request(e.what(), request));
+  }
 }
 
-void session_t::swipe_request_handler(const string_request_t &,
-                                      const url_query_t &) {
-  //
+void session_t::swipe_request_handler(string_request_t const &request,
+                                      url_query_t const &) {
+  try {
+    auto const json_root = json::parse(request.body()).get<json::object_t>();
+    auto x_iter = json_root.find("x");
+    auto x2_iter = json_root.find("x2");
+    auto y_iter = json_root.find("y");
+    auto y2_iter = json_root.find("y2");
+    auto event_iter = json_root.find("event");
+    auto velocity_iter = json_root.find("velocity");
+    if (utils::any_element_is_invalid(json_root, x_iter, y_iter, x2_iter,
+                                      y2_iter, event_iter, velocity_iter)) {
+      return error_handler(bad_request(
+          "x, y, x2, y2, duration or velocity is not found", request));
+    }
+    auto const x = x_iter->second.get<json::number_integer_t>();
+    auto const x2 = x2_iter->second.get<json::number_integer_t>();
+    auto const y = y_iter->second.get<json::number_integer_t>();
+    auto const y2 = y2_iter->second.get<json::number_integer_t>();
+    auto const event = event_iter->second.get<json::number_integer_t>();
+    auto const velocity = velocity_iter->second.get<json::number_integer_t>();
+    std::visit(
+        [x, x2, y, y2, event, velocity, request,
+         self = shared_from_this()](auto &&input_object) {
+          if (input_object.swipe_impl(x, y, x2, y2, velocity, event))
+            return self->send_response(self->json_success("OK", request));
+          self->error_handler(self->server_error("Error", request));
+        },
+        get_input_object());
+  } catch (std::exception const &e) {
+    spdlog::error(e.what());
+    return error_handler(bad_request(e.what(), request));
+  }
 }
 
-void session_t::text_request_handler(const string_request_t &,
-                                     const url_query_t &) {
-  //
+void session_t::text_request_handler(string_request_t const &request,
+                                     url_query_t const &) {
+  try {
+    auto const json_root = json::parse(request.body()).get<json::object_t>();
+    auto text_iter = json_root.find("text");
+    auto event_iter = json_root.find("event");
+    if (utils::any_element_is_invalid(json_root, text_iter, event_iter)) {
+      return error_handler(bad_request("event or value is not found", request));
+    }
+    auto const event = event_iter->second.get<json::number_integer_t>();
+    auto const text_array = text_iter->second.get<json::array_t>();
+
+    std::vector<int> text_list;
+    text_list.reserve(text_array.size());
+    for (auto const &text : text_array)
+      text_list.push_back(static_cast<int>(text.get<json::number_integer_t>()));
+
+    std::visit(
+        [list = std::move(text_list), event, request,
+         self = shared_from_this()](auto &&input_object) {
+          if (input_object.text_impl(list, event))
+            return self->send_response(self->json_success("OK", request));
+          self->error_handler(self->server_error("Error", request));
+        },
+        get_input_object());
+  } catch (std::exception const &e) {
+    spdlog::error(e.what());
+    return error_handler(bad_request(e.what(), request));
+  }
 }
 
-void session_t::screen_request_handler(const string_request_t &request,
-                                       const url_query_t &) {
+void session_t::screen_request_handler(string_request_t const &request,
+                                       url_query_t const &optional_query) {
   VALID_SCREEN_OR_ERROR();
-  std::visit(
-      [request, self = shared_from_this()](auto &&object) {
-        auto const &result = object.list_screens();
-        self->send_response(self->json_success(result, request));
-      },
-      screen_object);
+  auto const id_iter = optional_query.find("id");
+  if (id_iter == optional_query.cend()) {
+    std::visit(
+        [request, self = shared_from_this()](auto &&object) {
+          auto const &result = object.list_screens();
+          self->send_response(self->json_success(result, request));
+        },
+        screen_object);
+  } else {
+    auto const screen_id = id_iter->second.to_string();
+    if (screen_id.empty())
+      return error_handler(bad_request("invalid screen id", request));
+    std::visit(
+        [request, id = std::stoi(screen_id),
+         self = shared_from_this()](auto &&screen) {
+          image_data_t image{};
+          if (!screen.grab_frame_buffer(image, id)) {
+            self->send_response(
+                self->server_error("unable to get screenshot", request));
+          }
+          auto const filename = self->save_image_to_file(image);
+          self->send_file(filename, "image/png", request);
+        },
+        screen_object);
+  }
+}
+
+char get_random_char() {
+  static std::random_device rd{};
+  static std::mt19937 gen{rd()};
+  static std::uniform_int_distribution<> uid(0, 52);
+  static char const *all_alphas =
+      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+  return all_alphas[uid(gen)];
+}
+
+std::string get_random_string(std::size_t const length) {
+  std::string result{};
+  result.reserve(length);
+  for (std::size_t i = 0; i != length; ++i)
+    result.push_back(get_random_char());
+  return result;
+}
+
+void session_t::send_file(std::filesystem::path const &file_path,
+                          boost::string_view const content_type,
+                          string_request_t const &request) {
+  std::error_code ec_{};
+  if (!std::filesystem::exists(file_path, ec_))
+    return error_handler(bad_request("file does not exist", request));
+
+  http::file_body::value_type file;
+  beast::error_code ec{};
+  file.open(file_path.string().c_str(), beast::file_mode::read, ec);
+  if (ec) {
+    return error_handler(
+        server_error("unable to open file specified", request));
+  }
+
+  auto &response =
+      m_fileResponse.emplace(std::piecewise_construct, std::make_tuple(),
+                             std::make_tuple(m_fileAlloc));
+  response.result(http::status::ok);
+  response.keep_alive(request.keep_alive());
+  response.set(http::field::server, "qad-software");
+  response.set(http::field::content_type, content_type);
+  response.body() = std::move(file);
+  response.prepare_payload();
+
+  m_fileSerializer.emplace(*m_fileResponse);
+  http::async_write(m_tcpStream, *m_fileSerializer,
+                    [file_path, self = shared_from_this()](
+                        beast::error_code const ec, size_t const size_written) {
+                      self->m_fileSerializer.reset();
+                      self->m_fileResponse.reset();
+                      std::filesystem::remove(file_path);
+                      self->on_data_written(ec, size_written);
+                    });
+}
+
+std::string session_t::save_image_to_file(image_data_t const &image) {
+  auto const temp_path =
+      (std::filesystem::temp_directory_path() / get_random_string(25)).string();
+  auto const extension =
+      image.type == image_data_t::image_type_e::png ? "png" : ".bmp";
+  auto const filename = fmt::format("{}.{}", temp_path, extension);
+  std::ofstream out_file(filename, std::ios::out | std::ios::binary);
+  if (!out_file)
+    return {};
+  out_file.write((char *)image.buffer.data(), image.buffer.size());
+  out_file.close();
+  return filename;
 }
 
 // =========================STATIC FUNCTIONS==============================

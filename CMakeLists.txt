@@ -96,9 +96,9 @@ set(SRC_FILES
       src/backends/screen/kms.cpp
       src/images/bmp.cpp
       src/images/png.cpp
-        src/server.cpp
-        src/network_session.cpp
-        src/string_utils.cpp)
+      src/server.cpp
+      src/network_session.cpp
+      src/string_utils.cpp)
 
 # Header Files
 set(HEADERS_FILES
@@ -109,15 +109,15 @@ set(HEADERS_FILES
       include/backends/input/uinput.hpp
       include/backends/screen/ilm.hpp
       include/backends/screen/kms.hpp
-        include/server.hpp
-        include/network_session.hpp
-        include/field_allocs.hpp
-        include/string_utils.hpp
-        include/backends/screen.hpp
-        include/backends/input.hpp
-        include/arguments.hpp
-        include/enumerations.hpp
-        include/backends/screen/generic_screens.hpp)
+      include/server.hpp
+      include/network_session.hpp
+      include/field_allocs.hpp
+      include/string_utils.hpp
+      include/backends/screen.hpp
+      include/backends/input.hpp
+      include/arguments.hpp
+      include/enumerations.hpp
+)
 
 source_group("Headers" FILES ${HEADERS_FILES})
 source_group("Sources" FILES ${SRC_FILES})

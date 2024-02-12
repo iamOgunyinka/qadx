@@ -278,6 +278,9 @@ bool ilm_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
 }
 
 ilm_screen_t::~ilm_screen_t() {
+  if (!wayland_data.display)
+    return;
+
   wayland_screen_t *output = nullptr;
   wayland_screen_t *next = nullptr;
 
@@ -291,8 +294,10 @@ ilm_screen_t::~ilm_screen_t() {
   if (wayland_data.wm)
     ivi_wm_destroy(wayland_data.wm);
 
-  wl_registry_destroy(wayland_data.registry);
-  wl_event_queue_destroy(wayland_data.queue);
+  if (wayland_data.registry)
+    wl_registry_destroy(wayland_data.registry);
+  if (wayland_data.queue)
+    wl_event_queue_destroy(wayland_data.queue);
   wl_display_disconnect(wayland_data.display);
 }
 } // namespace qad

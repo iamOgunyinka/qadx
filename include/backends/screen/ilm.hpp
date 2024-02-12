@@ -63,7 +63,7 @@ struct screenshot_t {
 };
 
 struct ilm_screen_t {
-  std::string list_screens() { return {}; }
+  static std::string list_screens() { return {}; }
   bool grab_frame_buffer(image_data_t &screen_buffer, int screen);
   static ilm_screen_t create_instance();
   ~ilm_screen_t();

@@ -169,11 +169,11 @@ private:
   void screen_request_handler(string_request_t const &, url_query_t const &);
   std::optional<screen_variant_t> get_screen_object();
   input_variant_t get_input_object() const;
+  static std::string save_image_to_file(image_data_t const &);
   bool is_closed();
 
-  template <typename Func>
   void send_file(std::filesystem::path const &, boost::string_view,
-                 string_request_t const &, Func &&func);
+                 string_request_t const &);
 
 public:
   session_t(net::io_context &io, net::ip::tcp::socket &&socket,
@@ -184,33 +184,4 @@ public:
   void run() { http_read_data(); }
 };
 
-template <typename Func>
-void session_t::send_file(std::filesystem::path const &file_path,
-                          boost::string_view const content_type,
-                          string_request_t const &request, Func &&func) {
-  std::error_code ec_{};
-  if (!std::filesystem::exists(file_path, ec_))
-    return error_handler(bad_request("file does not exist", request));
-
-  http::file_body::value_type file;
-  beast::error_code ec{};
-  file.open(file_path.string().c_str(), beast::file_mode::read, ec);
-  if (ec) {
-    return error_handler(
-        server_error("unable to open file specified", request));
-  }
-
-  auto &response =
-      m_fileResponse.emplace(std::piecewise_construct, std::make_tuple(),
-                             std::make_tuple(m_fileAlloc));
-  response.result(http::status::ok);
-  response.keep_alive(request.keep_alive());
-  response.set(http::field::server, "qad-software");
-  response.set(http::field::content_type, content_type);
-  response.body() = std::move(file);
-  response.prepare_payload();
-
-  m_fileSerializer.emplace(*m_fileResponse);
-  http_write(m_tcpStream, *m_fileSerializer, func);
-}
 } // namespace qad
