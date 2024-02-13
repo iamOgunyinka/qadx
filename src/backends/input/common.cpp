@@ -29,7 +29,7 @@
 #include <thread>
 #include <unistd.h>
 
-namespace qad::utils {
+namespace qadx::utils {
 bool send_syn_event(int const fd) {
   input_event syn{};
   syn.input_event_sec = 0;
@@ -224,4 +224,4 @@ bool send_swipe(int x, int y, int const x2, int const y2, int const v,
          send_position_event_mt(x2, y2, fd) && send_syn_event(fd) &&
          send_swipe_footer(fd);
 }
-} // namespace qad::utils
+} // namespace qadx::utils

@@ -33,9 +33,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace qad {
+namespace qadx {
 
-using namespace qad::utils;
+using namespace qadx::utils;
 
 struct ev_dev_backend_t : qad_backend_input_t<ev_dev_backend_t> {
   static bool move_impl(int const x_axis, int const y_axis, int const event) {
@@ -97,4 +97,4 @@ private:
     throw std::runtime_error(error_string);
   }
 };
-} // namespace qad
+} // namespace qadx

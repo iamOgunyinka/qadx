@@ -28,7 +28,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace qad {
+namespace qadx {
 #pragma pack(push, 1)
 struct BMPHeader {
   uint16_t type{};
@@ -66,4 +66,4 @@ int encode_bmp(qad_screen_buffer_t const &data, int width, int height,
                int stride, image_data_t &screen_buffer);
 void write_png(void *ptr, int width, int height, int pitch, int bpp, int rgb,
                image_data_t &screen_buffer);
-} // namespace qad
+} // namespace qadx

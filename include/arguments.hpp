@@ -28,7 +28,7 @@
 #include "enumerations.hpp"
 #include <string>
 
-namespace qad {
+namespace qadx {
 struct cli_args_t {
   int port = 3465;
   int kms_format_rgb = 0;
@@ -46,4 +46,4 @@ struct runtime_args_t {
   std::string kms_backend_card;
 };
 
-} // namespace qad
+} // namespace qadx

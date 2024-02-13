@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
-project(qad)
+project(qadx)
 
 # Project
 get_filename_component(PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-set(PROJECT_NAME qad)
+set(PROJECT_NAME qadx)
 
 find_package(Boost REQUIRED)
 if(NOT Boost_FOUND)

@@ -25,7 +25,7 @@
 
 #pragma once
 
-namespace qad {
+namespace qadx {
 enum class input_type_e {
   evdev,
   uinput,
@@ -38,4 +38,4 @@ enum class screen_type_e {
   none,
 };
 
-} // namespace qad
+} // namespace qadx

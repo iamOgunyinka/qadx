@@ -29,6 +29,6 @@
 #include "backends/input/uinput.hpp"
 #include <variant>
 
-namespace qad {
+namespace qadx {
 using input_variant_t = std::variant<uinput_backend_t, ev_dev_backend_t>;
-} // namespace qad
+} // namespace qadx

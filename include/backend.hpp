@@ -40,7 +40,7 @@
 #define BUFFER_TYPE_PNG 0
 #define BUFFER_TYPE_BMP 1
 
-namespace qad {
+namespace qadx {
 using qad_screen_buffer_t = std::vector<unsigned char>;
 
 template <typename DerivedType> struct qad_backend_input_t {
@@ -85,4 +85,4 @@ enum class backend_type_e {
   ev_dev,
   uinput,
 };
-} // namespace qad
+} // namespace qadx

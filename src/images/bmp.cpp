@@ -26,7 +26,7 @@
 #include "image.hpp"
 #include <cstring>
 
-namespace qad {
+namespace qadx {
 // Write BMP file from image buffer
 int encode_bmp(qad_screen_buffer_t const &raw_image_buffer, int const width,
                int const height, int const stride, image_data_t &image_data) {
@@ -62,4 +62,4 @@ int encode_bmp(qad_screen_buffer_t const &raw_image_buffer, int const width,
   return 0;
 }
 
-} // namespace qad
+} // namespace qadx

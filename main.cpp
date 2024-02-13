@@ -28,10 +28,9 @@
 #include <CLI/CLI11.hpp>
 #include <iostream>
 
-namespace qad {
+namespace qadx {
 runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
   utils::to_lower_string(cli_args.input_type);
-  utils::to_lower_string(cli_args.kms_backend_card);
   utils::to_lower_string(cli_args.screen_backend);
 
   // expect screen_backend to be in ["kms", "ilm"]
@@ -58,7 +57,7 @@ runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
   args.port = cli_args.port;
   return args;
 }
-} // namespace qad
+} // namespace qadx
 
 int main(int argc, char **argv) {
   CLI::App cli_parser{
@@ -67,7 +66,7 @@ int main(int argc, char **argv) {
       "need for physical intervention as Q.A.D allows inputs to be "
       "injected via http requests",
       "qad"};
-  qad::cli_args_t args{};
+  qadx::cli_args_t args{};
   cli_parser.add_option("-p,--port", args.port, "port to bind server to");
   cli_parser.add_option("-i,--input-type", args.input_type,
                         "uinput or evdev; defaults to uinput");
@@ -80,14 +79,13 @@ int main(int argc, char **argv) {
   cli_parser.set_version_flag("-v,--version", QAD_VERSION);
   CLI11_PARSE(cli_parser, argc, argv)
 
-  [[maybe_unused]] auto rt_args =
-      qad::create_backend_runtime_args(std::move(args));
-  auto &io_context = qad::get_io_context();
+  auto rt_args = qadx::create_backend_runtime_args(std::move(args));
+  auto &io_context = qadx::get_io_context();
   auto server_instance =
-      std::make_shared<qad::server_t>(io_context, std::move(rt_args));
+      std::make_shared<qadx::server_t>(io_context, std::move(rt_args));
   if (!(*server_instance))
     return EXIT_FAILURE;
   server_instance->run();
   io_context.run();
-  return 0;
+  return EXIT_SUCCESS;
 }

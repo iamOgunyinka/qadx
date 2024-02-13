@@ -35,7 +35,7 @@
 
 #define CONTENT_TYPE_JSON "application/json"
 
-namespace qad {
+namespace qadx {
 enum constant_e { RequestBodySize = 1'024 * 1'024 * 50 };
 
 std::optional<endpoint_t::rule_iterator>
@@ -190,8 +190,8 @@ std::shared_ptr<session_t> session_t::add_endpoint_interfaces() {
                            verb::post);
   m_endpoints.add_endpoint("/text", JSON_ROUTE_CALLBACK(text_request_handler),
                            verb::post);
-  m_endpoints.add_endpoint(
-      "/screen", JSON_ROUTE_CALLBACK(screen_request_handler), verb::get);
+  m_endpoints.add_endpoint("/screen", ROUTE_CALLBACK(screen_request_handler),
+                           verb::get);
   return shared_from_this();
 }
 
@@ -391,31 +391,33 @@ void session_t::text_request_handler(string_request_t const &request,
 void session_t::screen_request_handler(string_request_t const &request,
                                        url_query_t const &optional_query) {
   VALID_SCREEN_OR_ERROR();
+
   auto const id_iter = optional_query.find("id");
   if (id_iter == optional_query.cend()) {
-    std::visit(
+    return std::visit(
         [request, self = shared_from_this()](auto &&object) {
           auto const &result = object.list_screens();
           self->send_response(self->json_success(result, request));
         },
         screen_object);
-  } else {
-    auto const screen_id = id_iter->second.to_string();
-    if (screen_id.empty())
-      return error_handler(bad_request("invalid screen id", request));
-    std::visit(
-        [request, id = std::stoi(screen_id),
-         self = shared_from_this()](auto &&screen) {
-          image_data_t image{};
-          if (!screen.grab_frame_buffer(image, id)) {
-            self->send_response(
-                self->server_error("unable to get screenshot", request));
-          }
-          auto const filename = self->save_image_to_file(image);
-          self->send_file(filename, "image/png", request);
-        },
-        screen_object);
   }
+
+  // as in the case of /screen?id=xy
+  auto const screen_id = id_iter->second.to_string();
+  if (screen_id.empty())
+    return error_handler(bad_request("invalid screen id", request));
+  std::visit(
+      [request, id = std::stoi(screen_id),
+       self = shared_from_this()](auto &&screen) {
+        image_data_t image{};
+        if (!screen.grab_frame_buffer(image, id)) {
+          self->send_response(
+              self->server_error("unable to get screenshot", request));
+        }
+        auto const filename = self->save_image_to_file(image);
+        self->send_file(filename, "image/png", request);
+      },
+      screen_object);
 }
 
 char get_random_char() {
@@ -543,4 +545,4 @@ string_response_t session_t::success(char const *message,
   response.prepare_payload();
   return response;
 }
-} // namespace qad
+} // namespace qadx

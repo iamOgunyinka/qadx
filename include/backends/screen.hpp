@@ -30,6 +30,6 @@
 
 #include <variant>
 
-namespace qad {
+namespace qadx {
 using screen_variant_t = std::variant<ilm_screen_t, kms_screen_t>;
-} // namespace qad
+} // namespace qadx

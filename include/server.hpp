@@ -33,7 +33,7 @@
 
 #define QAD_VERSION "0.0.1"
 
-namespace qad {
+namespace qadx {
 namespace net = boost::asio;
 namespace beast = boost::beast;
 
@@ -56,4 +56,4 @@ private:
 
 net::io_context &get_io_context();
 
-} // namespace qad
+} // namespace qadx

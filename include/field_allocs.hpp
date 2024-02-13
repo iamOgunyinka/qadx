@@ -5,7 +5,7 @@
 #include <memory>
 #include <stdexcept>
 
-namespace qad {
+namespace qadx {
 namespace detail {
 struct static_pool {
   std::size_t size_;
@@ -131,4 +131,4 @@ public:
     return !(lhs == rhs);
   }
 };
-} // namespace qad
+} // namespace qadx

@@ -32,7 +32,7 @@
 #define BUTTON_DOWN 1
 #define BUTTON_UP 0
 
-namespace qad {
+namespace qadx {
 namespace utils {
 bool send_syn_event(int fd);
 bool send_button_event(int value, int event);
@@ -75,4 +75,4 @@ struct mmap_auto_free_t {
   size_t m_size = 0;
 };
 
-} // namespace qad
+} // namespace qadx

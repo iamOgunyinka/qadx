@@ -27,7 +27,7 @@
 #include "image.hpp"
 #include <netinet/in.h>
 
-namespace qad {
+namespace qadx {
 void wm_screen_listener_screen_id(void *data, struct ivi_wm_screen *,
                                   uint32_t const screen_id) {
   auto output_screen = reinterpret_cast<wayland_screen_t *>(data);
@@ -299,5 +299,6 @@ ilm_screen_t::~ilm_screen_t() {
   if (wayland_data.queue)
     wl_event_queue_destroy(wayland_data.queue);
   wl_display_disconnect(wayland_data.display);
+  spdlog::info("Done...");
 }
-} // namespace qad
+} // namespace qadx

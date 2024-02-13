@@ -53,6 +53,11 @@
     self->callback(a, b);                                                      \
   }
 
+#define ROUTE_CALLBACK(callback)                                               \
+  [self = shared_from_this()] BN_REQUEST_PARAM {                               \
+    self->callback(request, optional_query);                                   \
+  }
+
 #define JSON_ROUTE_CALLBACK(callback)                                          \
   [self = shared_from_this()] BN_REQUEST_PARAM {                               \
     if (!self->is_json_request())                                              \
@@ -69,7 +74,7 @@
   }                                                                            \
   auto screen_object = opt_screen_object.value()
 
-namespace qad {
+namespace qadx {
 namespace net = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -184,4 +189,4 @@ public:
   void run() { http_read_data(); }
 };
 
-} // namespace qad
+} // namespace qadx

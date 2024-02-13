@@ -29,7 +29,7 @@
 #include "image.hpp"
 #include <memory>
 
-namespace qad {
+namespace qadx {
 struct kms_screen_t {
   static kms_screen_t create(std::string const &backend_card,
                              int kms_format_rgb);
@@ -40,4 +40,4 @@ struct kms_screen_t {
   int color_model = 0;
   std::string card = "/dev/dri/";
 };
-} // namespace qad
+} // namespace qadx

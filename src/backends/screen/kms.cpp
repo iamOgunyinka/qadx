@@ -30,7 +30,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-namespace qad {
+namespace qadx {
 std::string kms_screen_t::list_screens() {
   int file_descriptor = open(card.c_str(), O_RDONLY);
   if (file_descriptor < 0) {
@@ -119,4 +119,4 @@ kms_screen_t kms_screen_t::create(std::string const &backend_card,
   close(file_descriptor);
   return kms_screen;
 }
-} // namespace qad
+} // namespace qadx

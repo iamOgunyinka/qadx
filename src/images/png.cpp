@@ -28,7 +28,7 @@
 #include <png.h>
 #include <stdexcept>
 
-namespace qad {
+namespace qadx {
 void write_png_func(png_structp png_ptr, png_bytep data, png_size_t length) {
   auto foo = (image_data_t *)png_get_io_ptr(png_ptr);
   auto &buffer = foo->buffer;
@@ -83,4 +83,4 @@ void write_png(void *ptr, int const width, int const height, int const pitch,
   screen_buffer.type = image_data_t::image_type_e::png;
 }
 
-} // namespace qad
+} // namespace qadx

@@ -30,7 +30,7 @@
 #include <boost/asio/strand.hpp>
 #include <spdlog/spdlog.h>
 
-namespace qad {
+namespace qadx {
 server_t::server_t(net::io_context &context, runtime_args_t &&args)
     : m_ioContext(context), m_acceptor(net::make_strand(m_ioContext)),
       m_args(std::move(args)) {
@@ -97,4 +97,4 @@ net::io_context &get_io_context() {
       static_cast<int>(std::thread::hardware_concurrency())};
   return ioContext;
 }
-} // namespace qad
+} // namespace qadx

@@ -27,7 +27,7 @@
 
 #include <boost/utility/string_view.hpp>
 
-namespace qad::utils {
+namespace qadx::utils {
 std::string to_lower_copy(std::string const &str);
 std::string to_upper_copy(std::string const &str);
 void to_lower_string(std::string &str);
@@ -52,4 +52,4 @@ bool any_element_is_invalid(Container const &container,
                             IterList &&...iter_list) {
   return (... || (std::cend(container) == iter_list));
 }
-} // namespace qad::utils
+} // namespace qadx::utils

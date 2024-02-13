@@ -26,7 +26,7 @@
 #include "string_utils.hpp"
 #include <algorithm>
 
-namespace qad::utils {
+namespace qadx::utils {
 void ltrim(std::string &s) {
   s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
             return !std::isspace(ch);
@@ -140,4 +140,4 @@ std::vector<boost::string_view> split_string_view(boost::string_view const &str,
   return result;
 }
 
-} // namespace qad::utils
+} // namespace qadx::utils

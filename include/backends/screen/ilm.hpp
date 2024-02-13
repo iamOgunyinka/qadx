@@ -33,7 +33,7 @@
 #include <vector>
 #include <wayland-client.h>
 
-namespace qad {
+namespace qadx {
 
 struct wayland_screen_t {
   wl_output *output = nullptr;
@@ -72,4 +72,4 @@ private:
   ilm_screen_t() = default;
   wayland_data_t wayland_data{};
 };
-} // namespace qad
+} // namespace qadx

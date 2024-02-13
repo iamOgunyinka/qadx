@@ -30,8 +30,8 @@
 
 #include <linux/uinput.h>
 
-namespace qad {
-using namespace qad::utils;
+namespace qadx {
+using namespace qadx::utils;
 
 struct devices_t {
   int mouse{};
@@ -213,4 +213,4 @@ private:
 
   devices_t input_devices{};
 };
-} // namespace qad
+} // namespace qadx

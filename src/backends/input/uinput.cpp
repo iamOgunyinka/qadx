@@ -25,6 +25,6 @@
 
 #include "backends/input/uinput.hpp"
 
-namespace qad {
+namespace qadx {
 //
 }
