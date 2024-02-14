@@ -24,12 +24,14 @@
  */
 
 #pragma once
-
-#include "backends/screen/ilm.hpp"
-#include "backends/screen/kms.hpp"
-
-#include <variant>
+#include "image.hpp"
+#include <string>
 
 namespace qadx {
-using screen_variant_t = std::variant<ilm_screen_t, kms_screen_t>;
+struct base_screen_t {
+  base_screen_t() = default;
+  virtual ~base_screen_t() = default;
+  virtual std::string list_screens() = 0;
+  virtual bool grab_frame_buffer(image_data_t &screen_buffer, int screen) = 0;
+};
 } // namespace qadx

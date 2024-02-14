@@ -5,6 +5,7 @@ project(qadx)
 get_filename_component(PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
 set(PROJECT_NAME qadx)
+set(WAYLAND_DOCKER_PATH "/wayland-ivi-extension/build/ivi-layermanagement-api/")
 
 find_package(Boost REQUIRED)
 if(NOT Boost_FOUND)
@@ -32,39 +33,23 @@ set_package_properties(Libdrm PROPERTIES TYPE REQUIRED PURPOSE "Required for drm
 if(NOT Libdrm_FOUND)
     message(FATAL_ERROR "You need to have libdrm-dev(el) installed on your machine")
 else()
-    message(${Libdrm_INCLUDE_DIR})
-    message(${Libdrm_INCLUDE_DIRS})
-
     include_directories(${Libdrm_INCLUDE_DIRS})
     link_libraries(${Libdrm_LIBRARIES})
 endif ()
 
-# use openSSL
-find_package(OpenSSL REQUIRED)
-if(NOT OPENSSL_FOUND)
-    message(FATAL_ERROR "You need to have OpenSSL installed (e.g. libssl-dev)")
-else()
-    message("OpenSSL libraries: ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY}")
-    include_directories(${OPENSSL_INCLUDE_DIR})
-    link_libraries(${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
-endif()
-
-# Select openssl
-if(REQUIRE_SSL)
-    if(APPLE)
-        option(CMAKE_USE_SECTRANSP "enable Apple OS native SSL/TLS" ON)
-    endif()
-    if(WIN32)
-        set(CMAKE_USE_SCHANNEL "enable Windows native SSL/TLS" ON)
-    endif()
-endif()
-
 include_directories(${PROJECT_DIR}/ext)
 include_directories(${PROJECT_DIR}/ext/spdlog/include)
-include_directories(${PROJECT_DIR}/ext/wayland-ivi-extension)
 include_directories(${PROJECT_DIR}/include/)
 
+if (EXISTS ${WAYLAND_DOCKER_PATH})
+    message("${WAYLAND_DOCKER_PATH} does exist")
+    include_directories(${WAYLAND_DOCKER_PATH})
+else ()
+    message(FATAL_ERROR "${WAYLAND_DOCKER_PATH} does not exist")
+endif ()
+
 link_directories(/usr/lib)
+link_directories(/usr/local/lib)
 link_libraries(pthread png stdc++fs wayland-client ilmControl)
 
 
@@ -91,7 +76,6 @@ message("${PROJECT_NAME}: CURR BIN DIR: ${CMAKE_CURRENT_BINARY_DIR}")
 set(SRC_FILES
       main.cpp
       src/backends/input/common.cpp
-      src/backends/input/uinput.cpp
       src/backends/screen/ilm.cpp
       src/backends/screen/kms.cpp
       src/images/bmp.cpp
@@ -113,10 +97,10 @@ set(HEADERS_FILES
       include/network_session.hpp
       include/field_allocs.hpp
       include/string_utils.hpp
-      include/backends/screen.hpp
       include/backends/input.hpp
       include/arguments.hpp
       include/enumerations.hpp
+      include/backends/screen/base_screen.hpp
 )
 
 source_group("Headers" FILES ${HEADERS_FILES})
@@ -126,7 +110,7 @@ source_group("Sources" FILES ${SRC_FILES})
 add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEADERS_FILES})
 
 if(NOT MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -std=c++17 -O3")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -std=c++17 -O3 -Werror")
     if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     endif()

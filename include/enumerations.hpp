@@ -38,4 +38,10 @@ enum class screen_type_e {
   none,
 };
 
+enum class image_type_e {
+  png,
+  bmp,
+  none,
+};
+
 } // namespace qadx

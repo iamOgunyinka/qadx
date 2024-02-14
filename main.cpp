@@ -26,7 +26,6 @@
 #include "server.hpp"
 #include "string_utils.hpp"
 #include <CLI/CLI11.hpp>
-#include <iostream>
 
 namespace qadx {
 runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
@@ -67,7 +66,8 @@ int main(int argc, char **argv) {
       "injected via http requests",
       "qad"};
   qadx::cli_args_t args{};
-  cli_parser.add_option("-p,--port", args.port, "port to bind server to");
+  cli_parser.add_option("-p,--port", args.port,
+                        "port to bind server to(default: 3465)");
   cli_parser.add_option("-i,--input-type", args.input_type,
                         "uinput or evdev; defaults to uinput");
   cli_parser.add_option("-s,--screen-backend", args.screen_backend,

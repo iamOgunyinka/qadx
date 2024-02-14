@@ -23,6 +23,7 @@
  * SOFTWARE.
  */
 
+#include "enumerations.hpp"
 #include "image.hpp"
 #include <cstring>
 
@@ -51,7 +52,7 @@ int encode_bmp(qad_screen_buffer_t const &raw_image_buffer, int const width,
 
   auto const buffer_size = sizeof header + header.image_size;
   image_data.buffer.resize(buffer_size);
-  image_data.type = image_data_t::image_type_e::bmp;
+  image_data.type = image_type_e::bmp;
 
   unsigned char *out = image_data.buffer.data();
   memcpy(out, &header, sizeof header);

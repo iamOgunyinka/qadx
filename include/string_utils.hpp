@@ -41,6 +41,8 @@ std::string trim_copy(std::string const &s);
 std::vector<boost::string_view> split_string_view(boost::string_view const &str,
                                                   char const *delim);
 std::string decode_url(boost::string_view const &encoded_string);
+std::string get_random_string(size_t length);
+char get_random_char();
 
 template <typename Arg, typename... T>
 inline bool expect_any_of(Arg const &first, T &&...args) {

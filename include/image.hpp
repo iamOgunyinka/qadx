@@ -29,6 +29,9 @@
 #include <vector>
 
 namespace qadx {
+// forward declaration
+enum class image_type_e;
+
 #pragma pack(push, 1)
 struct BMPHeader {
   uint16_t type{};
@@ -52,14 +55,8 @@ struct BMPHeader {
 
 using qad_screen_buffer_t = std::vector<unsigned char>;
 struct image_data_t {
-  enum class image_type_e {
-    png,
-    bmp,
-    none,
-  };
-
   qad_screen_buffer_t buffer;
-  image_type_e type = image_type_e::none;
+  image_type_e type;
 };
 
 int encode_bmp(qad_screen_buffer_t const &data, int width, int height,

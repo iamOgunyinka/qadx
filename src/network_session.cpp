@@ -24,7 +24,6 @@
  */
 
 #include "network_session.hpp"
-#include "string_utils.hpp"
 
 #include <boost/algorithm/string.hpp>
 #include <boost/beast/http/read.hpp>
@@ -32,6 +31,10 @@
 #include <fstream>
 #include <random>
 #include <spdlog/spdlog.h>
+
+#include "backends/screen/ilm.hpp"
+#include "backends/screen/kms.hpp"
+#include "string_utils.hpp"
 
 #define CONTENT_TYPE_JSON "application/json"
 
@@ -51,11 +54,26 @@ endpoint_t::get_rules(boost::string_view const &target) {
   return get_rules(target.to_string());
 }
 
+std::string save_image_to_file(image_data_t const &image) {
+  auto const temp_path =
+      (std::filesystem::temp_directory_path() / get_random_string(25)).string();
+  auto const extension = image.type == image_type_e::png ? "png" : "bmp";
+  auto const filename = fmt::format("{}.{}", temp_path, extension);
+  std::ofstream out_file(filename, std::ios::out | std::ios::binary);
+  if (!out_file)
+    return {};
+  out_file.write((char *)image.buffer.data(), image.buffer.size());
+  out_file.close();
+  return filename;
+}
+
+session_t::~session_t() { spdlog::info("Session completed..."); }
+
 void session_t::http_read_data() {
   m_buffer.clear();
   m_emptyBodyParser.emplace();
   m_emptyBodyParser->body_limit(RequestBodySize);
-  beast::get_lowest_layer(m_tcpStream).expires_after(std::chrono::minutes(5));
+  beast::get_lowest_layer(m_tcpStream).expires_after(std::chrono::seconds(120));
   http::async_read_header(m_tcpStream, m_buffer, *m_emptyBodyParser,
                           ASYNC_CALLBACK(on_header_read));
 }
@@ -195,21 +213,24 @@ std::shared_ptr<session_t> session_t::add_endpoint_interfaces() {
   return shared_from_this();
 }
 
-std::optional<screen_variant_t> session_t::get_screen_object() {
+base_screen_t *get_screen_object(runtime_args_t const &args) {
+  base_screen_t *screen = nullptr;
   try {
-    if (m_rt_arguments.screen_backend == screen_type_e::ilm)
-      return ilm_screen_t::create_instance();
-    else
-      return kms_screen_t::create(m_rt_arguments.kms_backend_card,
-                                  m_rt_arguments.kms_format_rgb);
-
+    if (args.screen_backend == screen_type_e::ilm) {
+      auto temp_screen = ilm_screen_t::create_global_instance();
+      screen = temp_screen.get();
+    } else {
+      auto temp_screen = kms_screen_t::create_global_instance(
+          args.kms_backend_card, args.kms_format_rgb);
+      screen = temp_screen.get();
+    }
   } catch (std::exception const &) {
-    return std::nullopt;
   }
+  return screen;
 }
 
-input_variant_t session_t::get_input_object() const {
-  if (m_rt_arguments.input_backend == input_type_e::evdev)
+input_variant_t get_input_object(runtime_args_t const &args) {
+  if (args.input_backend == input_type_e::evdev)
     return ev_dev_backend_t();
   else
     return uinput_backend_t();
@@ -231,11 +252,11 @@ void session_t::move_mouse_request_handler(string_request_t const &request,
     auto const event = event_iter->second.get<json::number_integer_t>();
     std::visit(
         [x, y, event, request, self = shared_from_this()](auto &&input_object) {
-          if (input_object.move_impl(x, y, event))
+          if (input_object.move(x, y, event))
             return self->send_response(self->json_success("OK", request));
           self->error_handler(self->server_error("Error", request));
         },
-        get_input_object());
+        get_input_object(m_rt_arguments));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
@@ -256,11 +277,11 @@ void session_t::button_request_handler(string_request_t const &request,
     std::visit(
         [value, event, request,
          self = shared_from_this()](auto &&input_object) {
-          if (input_object.button_impl(value, event))
+          if (input_object.button(value, event))
             return self->send_response(self->json_success("OK", request));
           self->error_handler(self->server_error("Error", request));
         },
-        get_input_object());
+        get_input_object(m_rt_arguments));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
@@ -287,11 +308,11 @@ void session_t::touch_request_handler(string_request_t const &request,
     std::visit(
         [x, y, event, duration, request,
          self = shared_from_this()](auto &&input_object) {
-          if (input_object.touch_impl(x, y, duration, event))
+          if (input_object.touch(x, y, duration, event))
             return self->send_response(self->json_success("OK", request));
           self->error_handler(self->server_error("Error", request));
         },
-        get_input_object());
+        get_input_object(m_rt_arguments));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
@@ -311,11 +332,11 @@ void session_t::key_request_handler(string_request_t const &request,
     auto const key = key_iter->second.get<json::number_integer_t>();
     std::visit(
         [key, event, request, self = shared_from_this()](auto &&input_object) {
-          if (input_object.key_impl(key, event))
+          if (input_object.key(key, event))
             return self->send_response(self->json_success("OK", request));
           self->error_handler(self->server_error("Error", request));
         },
-        get_input_object());
+        get_input_object(m_rt_arguments));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
@@ -346,11 +367,11 @@ void session_t::swipe_request_handler(string_request_t const &request,
     std::visit(
         [x, x2, y, y2, event, velocity, request,
          self = shared_from_this()](auto &&input_object) {
-          if (input_object.swipe_impl(x, y, x2, y2, velocity, event))
+          if (input_object.swipe(x, y, x2, y2, velocity, event))
             return self->send_response(self->json_success("OK", request));
           self->error_handler(self->server_error("Error", request));
         },
-        get_input_object());
+        get_input_object(m_rt_arguments));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
@@ -377,11 +398,11 @@ void session_t::text_request_handler(string_request_t const &request,
     std::visit(
         [list = std::move(text_list), event, request,
          self = shared_from_this()](auto &&input_object) {
-          if (input_object.text_impl(list, event))
+          if (input_object.text(list, event))
             return self->send_response(self->json_success("OK", request));
           self->error_handler(self->server_error("Error", request));
         },
-        get_input_object());
+        get_input_object(m_rt_arguments));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
@@ -390,51 +411,27 @@ void session_t::text_request_handler(string_request_t const &request,
 
 void session_t::screen_request_handler(string_request_t const &request,
                                        url_query_t const &optional_query) {
-  VALID_SCREEN_OR_ERROR();
+  auto screen_object = get_screen_object(m_rt_arguments);
+  if (!screen_object) {
+    return error_handler(
+        server_error("unable to create screen object", request));
+  }
 
   auto const id_iter = optional_query.find("id");
-  if (id_iter == optional_query.cend()) {
-    return std::visit(
-        [request, self = shared_from_this()](auto &&object) {
-          auto const &result = object.list_screens();
-          self->send_response(self->json_success(result, request));
-        },
-        screen_object);
-  }
+  if (id_iter == optional_query.cend())
+    return send_response(json_success(screen_object->list_screens(), request));
 
   // as in the case of /screen?id=xy
   auto const screen_id = id_iter->second.to_string();
   if (screen_id.empty())
     return error_handler(bad_request("invalid screen id", request));
-  std::visit(
-      [request, id = std::stoi(screen_id),
-       self = shared_from_this()](auto &&screen) {
-        image_data_t image{};
-        if (!screen.grab_frame_buffer(image, id)) {
-          self->send_response(
-              self->server_error("unable to get screenshot", request));
-        }
-        auto const filename = self->save_image_to_file(image);
-        self->send_file(filename, "image/png", request);
-      },
-      screen_object);
-}
 
-char get_random_char() {
-  static std::random_device rd{};
-  static std::mt19937 gen{rd()};
-  static std::uniform_int_distribution<> uid(0, 52);
-  static char const *all_alphas =
-      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
-  return all_alphas[uid(gen)];
-}
+  image_data_t image{};
+  if (!screen_object->grab_frame_buffer(image, std::stoi(screen_id)))
+    return send_response(server_error("unable to get screenshot", request));
 
-std::string get_random_string(std::size_t const length) {
-  std::string result{};
-  result.reserve(length);
-  for (std::size_t i = 0; i != length; ++i)
-    result.push_back(get_random_char());
-  return result;
+  auto const filename = save_image_to_file(image);
+  send_file(filename, "image/png", request);
 }
 
 void session_t::send_file(std::filesystem::path const &file_path,
@@ -471,20 +468,6 @@ void session_t::send_file(std::filesystem::path const &file_path,
                       std::filesystem::remove(file_path);
                       self->on_data_written(ec, size_written);
                     });
-}
-
-std::string session_t::save_image_to_file(image_data_t const &image) {
-  auto const temp_path =
-      (std::filesystem::temp_directory_path() / get_random_string(25)).string();
-  auto const extension =
-      image.type == image_data_t::image_type_e::png ? "png" : ".bmp";
-  auto const filename = fmt::format("{}.{}", temp_path, extension);
-  std::ofstream out_file(filename, std::ios::out | std::ios::binary);
-  if (!out_file)
-    return {};
-  out_file.write((char *)image.buffer.data(), image.buffer.size());
-  out_file.close();
-  return filename;
 }
 
 // =========================STATIC FUNCTIONS==============================

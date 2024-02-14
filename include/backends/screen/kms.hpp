@@ -26,18 +26,23 @@
 #pragma once
 
 #include "backend.hpp"
-#include "image.hpp"
+#include "base_screen.hpp"
 #include <memory>
 
 namespace qadx {
-struct kms_screen_t {
-  static kms_screen_t create(std::string const &backend_card,
-                             int kms_format_rgb);
-  std::string list_screens();
-  bool grab_frame_buffer(image_data_t &screen_buffer, int screen);
-  ~kms_screen_t() = default;
+struct kms_screen_t final : public base_screen_t {
+  static std::shared_ptr<kms_screen_t>
+  create_global_instance(std::string const &backend_card, int kms_format_rgb);
 
-  int color_model = 0;
-  std::string card = "/dev/dri/";
+  std::string list_screens() final;
+  bool grab_frame_buffer(image_data_t &screen_buffer, int screen) final;
+  ~kms_screen_t() override = default;
+
+private:
+  friend std::unique_ptr<kms_screen_t>
+  create_instance(std::string const &backend_card, int kms_format_rgb);
+  kms_screen_t() : base_screen_t() {}
+  int m_colorModel = 0;
+  std::string m_card = "/dev/dri/";
 };
 } // namespace qadx

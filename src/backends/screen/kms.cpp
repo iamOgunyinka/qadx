@@ -25,18 +25,23 @@
 
 #include "backends/screen/kms.hpp"
 #include "backends/input/common.hpp"
-#include "drm/drm_mode.h"
+#include "drm_mode.h"
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
+#include <memory>
+
 namespace qadx {
 std::string kms_screen_t::list_screens() {
-  int file_descriptor = open(card.c_str(), O_RDONLY);
+  int file_descriptor = open(m_card.c_str(), O_RDONLY);
+  spdlog::info("FileDescriptor opening for {} {}", m_card, file_descriptor);
+
   if (file_descriptor < 0) {
-    spdlog::error("Error opening {}: {}", card, strerror(errno));
+    spdlog::error("Error opening {}: {}", m_card, strerror(errno));
     return {};
   }
+
   auto resources = drmModeGetResources(file_descriptor);
   if (!resources) {
     close(file_descriptor);
@@ -67,9 +72,9 @@ std::string kms_screen_t::list_screens() {
 
 bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
                                      int const screen) {
-  int file_descriptor = open(card.c_str(), O_RDWR | O_CLOEXEC);
+  int file_descriptor = open(m_card.c_str(), O_RDWR | O_CLOEXEC);
   if (file_descriptor < 0) {
-    spdlog::error("Error opening {}: {}", card, strerror(errno));
+    spdlog::error("Error opening {}: {}", m_card, strerror(errno));
     return false;
   }
 
@@ -105,18 +110,26 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
   return true;
 }
 
-kms_screen_t kms_screen_t::create(std::string const &backend_card,
-                                  int const kms_format_rgb) {
-  auto kms_screen = kms_screen_t{};
-  kms_screen.card += backend_card;
-  kms_screen.color_model = kms_format_rgb;
+std::unique_ptr<kms_screen_t> create_instance(std::string const &backend_card,
+                                              int const kms_format_rgb) {
+  kms_screen_t kms_screen{};
+  kms_screen.m_card += backend_card;
+  kms_screen.m_colorModel = kms_format_rgb;
 
-  int file_descriptor = open(kms_screen.card.c_str(), O_RDWR | O_CLOEXEC);
+  int file_descriptor = open(kms_screen.m_card.c_str(), O_RDWR | O_CLOEXEC);
   if (file_descriptor < 0) {
-    spdlog::error("Failed to open {}", kms_screen.card);
-    throw std::runtime_error("");
+    spdlog::error("Failed to open {}", kms_screen.m_card);
+    return nullptr;
   }
   close(file_descriptor);
-  return kms_screen;
+  return std::make_unique<kms_screen_t>(kms_screen);
+}
+
+std::shared_ptr<kms_screen_t>
+kms_screen_t::create_global_instance(std::string const &backend_card,
+                                     int const kms_format_rgb) {
+  static std::shared_ptr<kms_screen_t> screen{
+      create_instance(backend_card, kms_format_rgb)};
+  return screen;
 }
 } // namespace qadx

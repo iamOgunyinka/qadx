@@ -27,8 +27,8 @@
 
 #include "backends/input/evdev.hpp"
 #include "backends/input/uinput.hpp"
-#include "image.hpp"
-#include <ivi-layermanagement-api/ilmControl/ivi-wm-client-protocol.h>
+#include "base_screen.hpp"
+#include <ilmControl/ivi-wm-client-protocol.h>
 #include <memory>
 #include <vector>
 #include <wayland-client.h>
@@ -43,7 +43,7 @@ struct wayland_screen_t {
   int offset_x = 0;
   int offset_y = 0;
   int screen_id = 0;
-  wl_list link{};
+  wl_list wy_link{};
 };
 
 struct wayland_data_t {
@@ -62,14 +62,17 @@ struct screenshot_t {
   int done = 0;
 };
 
-struct ilm_screen_t {
-  static std::string list_screens() { return {}; }
-  bool grab_frame_buffer(image_data_t &screen_buffer, int screen);
-  static ilm_screen_t create_instance();
-  ~ilm_screen_t();
+struct ilm_screen_t final : public base_screen_t {
+  static std::shared_ptr<ilm_screen_t> create_global_instance();
+
+  std::string list_screens() final { return {}; }
+  bool grab_frame_buffer(image_data_t &screen_buffer, int screen) final;
+  ~ilm_screen_t() override;
 
 private:
-  ilm_screen_t() = default;
+  friend std::unique_ptr<ilm_screen_t> create_instance();
+  explicit ilm_screen_t(wayland_data_t &&wd)
+      : base_screen_t{}, wayland_data(std::move(wd)) {}
   wayland_data_t wayland_data{};
 };
 } // namespace qadx

@@ -43,7 +43,6 @@
 #include "arguments.hpp"
 #include "field_allocs.hpp"
 #include <backends/input.hpp>
-#include <backends/screen.hpp>
 
 #define BN_REQUEST_PARAM                                                       \
   (string_request_t const &request, url_query_t const &optional_query)
@@ -65,14 +64,6 @@
           bad_request("invalid content-type", request));                       \
     self->callback(request, optional_query);                                   \
   }
-
-#define VALID_SCREEN_OR_ERROR()                                                \
-  auto opt_screen_object = get_screen_object();                                \
-  if (!opt_screen_object.has_value()) {                                        \
-    return error_handler(                                                      \
-        server_error("unable to create screen object", request));              \
-  }                                                                            \
-  auto screen_object = opt_screen_object.value()
 
 namespace qadx {
 namespace net = boost::asio;
@@ -118,7 +109,6 @@ public:
 };
 
 class session_t : public std::enable_shared_from_this<session_t> {
-  using dynamic_body_ptr = std::unique_ptr<dynamic_request>;
   using string_body_ptr =
       std::unique_ptr<http::request_parser<http::string_body>>;
   using alloc_t = fields_alloc<char>;
@@ -172,9 +162,6 @@ private:
   void key_request_handler(string_request_t const &, url_query_t const &);
   void text_request_handler(string_request_t const &, url_query_t const &);
   void screen_request_handler(string_request_t const &, url_query_t const &);
-  std::optional<screen_variant_t> get_screen_object();
-  input_variant_t get_input_object() const;
-  static std::string save_image_to_file(image_data_t const &);
   bool is_closed();
 
   void send_file(std::filesystem::path const &, boost::string_view,
@@ -184,7 +171,7 @@ public:
   session_t(net::io_context &io, net::ip::tcp::socket &&socket,
             runtime_args_t const &args)
       : m_ioContext(io), m_tcpStream(std::move(socket)), m_rt_arguments(args) {}
-
+  ~session_t();
   std::shared_ptr<session_t> add_endpoint_interfaces();
   void run() { http_read_data(); }
 };

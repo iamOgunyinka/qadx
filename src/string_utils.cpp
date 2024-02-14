@@ -25,6 +25,7 @@
 
 #include "string_utils.hpp"
 #include <algorithm>
+#include <random>
 
 namespace qadx::utils {
 void ltrim(std::string &s) {
@@ -137,6 +138,23 @@ std::vector<boost::string_view> split_string_view(boost::string_view const &str,
   }
   if (from_pos < str.length())
     result.emplace_back(str.data() + from_pos, str.size() - from_pos);
+  return result;
+}
+
+char get_random_char() {
+  static std::random_device rd{};
+  static std::mt19937 gen{rd()};
+  static std::uniform_int_distribution<> uid(0, 52);
+  static char const *all_alphas =
+      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+  return all_alphas[uid(gen)];
+}
+
+std::string get_random_string(std::size_t const length) {
+  std::string result{};
+  result.reserve(length);
+  for (std::size_t i = 0; i != length; ++i)
+    result.push_back(get_random_char());
   return result;
 }
 

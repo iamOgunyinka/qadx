@@ -23,6 +23,7 @@
  * SOFTWARE.
  */
 
+#include "enumerations.hpp"
 #include "image.hpp"
 #include <cstring>
 #include <png.h>
@@ -80,7 +81,7 @@ void write_png(void *ptr, int const width, int const height, int const pitch,
 
   png_write_end(png_ptr, nullptr);
   png_destroy_write_struct(&png_ptr, &png_info_ptr);
-  screen_buffer.type = image_data_t::image_type_e::png;
+  screen_buffer.type = image_type_e::png;
 }
 
 } // namespace qadx

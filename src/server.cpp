@@ -35,7 +35,7 @@ server_t::server_t(net::io_context &context, runtime_args_t &&args)
     : m_ioContext(context), m_acceptor(net::make_strand(m_ioContext)),
       m_args(std::move(args)) {
   beast::error_code ec{}; // used when we don't need to throw all around
-  auto const ip_address = "127.0.0.1";
+  auto const ip_address = "0.0.0.0";
   spdlog::info("Server running on {}:{}", ip_address, m_args.port);
 
   tcp::endpoint endpoint(net::ip::make_address(ip_address), m_args.port);

@@ -39,8 +39,8 @@ struct devices_t {
   int keyboard{};
 };
 
-struct uinput_backend_t : qad_backend_t<uinput_backend_t> {
-  uinput_backend_t() : qad_backend_t(), input_devices{} {
+struct uinput_backend_t {
+  uinput_backend_t() : input_devices{} {
     input_devices.keyboard = create_keyboard();
     input_devices.mouse = create_mouse();
     input_devices.touch = create_touch_device();
@@ -48,7 +48,7 @@ struct uinput_backend_t : qad_backend_t<uinput_backend_t> {
 
   ~uinput_backend_t() = default;
 
-  bool move_impl(int x, int y, int event) {
+  bool move(int const x, int const y, int const event) {
     int &fd = get_uinput_file_descriptor(event);
     if (fd < 0)
       return false;
@@ -59,7 +59,7 @@ struct uinput_backend_t : qad_backend_t<uinput_backend_t> {
     return send_syn_event(fd);
   }
 
-  bool button_impl(int value, int event) {
+  bool button(int const value, int const event) {
     int &fd = get_uinput_file_descriptor(event);
     if (fd < 0)
       return false;
@@ -74,7 +74,7 @@ struct uinput_backend_t : qad_backend_t<uinput_backend_t> {
     return send_syn_event(event);
   }
 
-  bool touch_impl(int x, int y, int duration, int event) {
+  bool touch(int const x, int const y, int const duration, int const event) {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0) {
       bool const succeed = send_touch(x, y, duration, fd);
       if (!succeed)
@@ -84,13 +84,14 @@ struct uinput_backend_t : qad_backend_t<uinput_backend_t> {
     return false;
   }
 
-  bool swipe_impl(int x1, int y1, int x2, int y2, int velocity, int event) {
+  bool swipe(int const x1, int const y1, int const x2, int const y2,
+                  int const velocity, int const event) {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0)
       return send_swipe(x1, y1, x2, y2, velocity, fd);
     return false;
   }
 
-  bool key_impl(int key, int event) {
+  bool key(int const key, int const event) {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0) {
       if (!send_key_event(key, fd)) {
         close(fd);
@@ -101,7 +102,7 @@ struct uinput_backend_t : qad_backend_t<uinput_backend_t> {
     return false;
   }
 
-  bool text_impl(std::vector<int> const &key_codes, int const event) {
+  bool text(std::vector<int> const &key_codes, int const event) {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0)
       return send_text_event(key_codes, fd);
     return false;

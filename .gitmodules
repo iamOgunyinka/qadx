@@ -1,6 +1,3 @@
 [submodule "ext/spdlog"]
 	path = ext/spdlog
 	url = https://github.com/gabime/spdlog
-[submodule "ext/wayland-ivi-extension"]
-	path = ext/wayland-ivi-extension
-	url = https://github.com/COVESA/wayland-ivi-extension

@@ -81,18 +81,23 @@ void registry_handler(void *data, wl_registry *registry, uint32_t const id,
                       char const *interface, uint32_t const) {
   auto wd = reinterpret_cast<wayland_data_t *>(data);
   if (interface == std::string("wl_output")) {
+    spdlog::info("Creating wayland_screen_t instance. ID: {}", id);
     auto output_screen = new wayland_screen_t();
     output_screen->output = reinterpret_cast<wl_output *>(
         wl_registry_bind(registry, id, &wl_output_interface, 1));
+
     wl_output_add_listener(output_screen->output, &output_listener,
                            output_screen);
     if (wd->wm) {
+      spdlog::info("WD->wm is valid");
       output_screen->wm_screen =
           ivi_wm_create_screen(wd->wm, output_screen->output);
       ivi_wm_screen_add_listener(output_screen->wm_screen, &wm_screen_listener,
                                  output_screen);
     }
-    wl_list_insert(&wd->output_list, &output_screen->link);
+    spdlog::info("Length of output list is {}",
+                 wl_list_length(&wd->output_list));
+    wl_list_insert(&wd->output_list, &output_screen->wy_link);
   } else if (interface == std::string("ivi_wm")) {
     auto r = wl_registry_bind(registry, id, &ivi_wm_interface, 1);
     wd->wm = reinterpret_cast<ivi_wm *>(r);
@@ -104,14 +109,13 @@ static wl_registry_listener const registry_listener = {
     registry_remover,
 };
 
-ilm_screen_t ilm_screen_t::create_instance() {
-  ilm_screen_t screen{};
-  wayland_data_t &wd{screen.wayland_data};
+std::unique_ptr<ilm_screen_t> create_instance() {
+  wayland_data_t wd{};
 
   wd.display = wl_display_connect(nullptr);
   if (!wd.display) {
     spdlog::error("failed to connect to WL display: {}", strerror(errno));
-    throw std::runtime_error("");
+    return nullptr;
   }
 
   wd.queue = wl_display_create_queue(wd.display);
@@ -123,16 +127,17 @@ ilm_screen_t ilm_screen_t::create_instance() {
   // Block until all pending request are processed by the server
   if (wl_display_roundtrip_queue(wd.display, wd.queue) == -1) {
     spdlog::error("Failed to get globals");
-    throw std::runtime_error("");
+    return nullptr;
   }
 
   if (!wd.wm) {
     spdlog::error("Compositor does not ivi_wm or weston screenshoter");
     wl_display_disconnect(wd.display);
+    return nullptr;
   }
 
   wayland_screen_t *output = nullptr;
-  wl_list_for_each(output, &wd.output_list, link) {
+  wl_list_for_each(output, &wd.output_list, wy_link) {
     if (!output->wm_screen) {
       output->wm_screen = ivi_wm_create_screen(wd.wm, output->output);
       ivi_wm_screen_add_listener(output->wm_screen, &wm_screen_listener,
@@ -145,10 +150,14 @@ ilm_screen_t ilm_screen_t::create_instance() {
     // do error check and free resources
     spdlog::error("setting ivi_wm_screen listeners failed");
     wl_display_disconnect(wd.display);
-    throw std::runtime_error("");
+    return nullptr;
   }
+  return std::unique_ptr<ilm_screen_t>(new ilm_screen_t(std::move(wd)));
+}
 
-  return screen;
+std::shared_ptr<ilm_screen_t> ilm_screen_t::create_global_instance() {
+  static std::shared_ptr<ilm_screen_t> instance{create_instance()};
+  return instance;
 }
 
 void ivi_screenshot_done(void *data, ivi_screenshot *ivi_screenshot,
@@ -241,8 +250,8 @@ bool ilm_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
   wayland_screen_t *chosen_screen = nullptr;
   wayland_screen_t *output = nullptr;
 
-  wl_list_for_each(output, &wayland_data.output_list, link) {
-    if (screen == output->screen_id) {
+  wl_list_for_each(output, &wayland_data.output_list, wy_link) {
+    if (output && screen == output->screen_id) {
       chosen_screen = output;
       break;
     }
@@ -278,17 +287,20 @@ bool ilm_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
 }
 
 ilm_screen_t::~ilm_screen_t() {
+  spdlog::info("ILM destructor called");
   if (!wayland_data.display)
     return;
 
-  wayland_screen_t *output = nullptr;
-  wayland_screen_t *next = nullptr;
-
-  wl_list_for_each_safe(output, next, &wayland_data.output_list, link) {
-    if (output->wm_screen)
-      ivi_wm_screen_destroy(output->wm_screen);
-    wl_output_destroy(output->output);
-    delete output;
+  if (wl_list_empty(&wayland_data.output_list) == 0) {
+    wayland_screen_t *output = nullptr;
+    wayland_screen_t *next = nullptr;
+    wl_list_for_each_safe(output, next, &wayland_data.output_list, wy_link) {
+      if (output && output->wm_screen)
+        ivi_wm_screen_destroy(output->wm_screen);
+      if (output)
+        wl_output_destroy(output->output);
+      delete output;
+    }
   }
 
   if (wayland_data.wm)
@@ -299,6 +311,6 @@ ilm_screen_t::~ilm_screen_t() {
   if (wayland_data.queue)
     wl_event_queue_destroy(wayland_data.queue);
   wl_display_disconnect(wayland_data.display);
-  spdlog::info("Done...");
+  spdlog::info("Dtor done.");
 }
 } // namespace qadx

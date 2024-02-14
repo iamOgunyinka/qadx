@@ -32,7 +32,6 @@ namespace qadx {
 struct cli_args_t {
   int port = 3465;
   int kms_format_rgb = 0;
-  std::string ip_address = "127.0.0.1";
   std::string input_type = "uinput";
   std::string screen_backend = "kms";
   std::string kms_backend_card = "card0";
