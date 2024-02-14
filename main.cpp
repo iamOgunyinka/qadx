@@ -26,6 +26,7 @@
 #include "server.hpp"
 #include "string_utils.hpp"
 #include <CLI/CLI11.hpp>
+#include <thread>
 
 namespace qadx {
 runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
@@ -48,7 +49,6 @@ runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
 
   if (cli_args.screen_backend == "kms") {
     args.screen_backend = screen_type_e::kms;
-    args.kms_backend_card = cli_args.kms_backend_card;
     args.kms_format_rgb = cli_args.kms_format_rgb;
   } else {
     args.screen_backend = screen_type_e::ilm;
@@ -58,6 +58,8 @@ runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
 }
 } // namespace qadx
 
+namespace fs = std::filesystem;
+
 int main(int argc, char **argv) {
   CLI::App cli_parser{
       "qad is a simple, REST-API compliant daemon which "
@@ -65,14 +67,17 @@ int main(int argc, char **argv) {
       "need for physical intervention as Q.A.D allows inputs to be "
       "injected via http requests",
       "qad"};
+
   qadx::cli_args_t args{};
+  std::string kms_backend_card{};
+
   cli_parser.add_option("-p,--port", args.port,
                         "port to bind server to(default: 3465)");
   cli_parser.add_option("-i,--input-type", args.input_type,
                         "uinput or evdev; defaults to uinput");
   cli_parser.add_option("-s,--screen-backend", args.screen_backend,
                         "kms or ilm; defaults to kms");
-  cli_parser.add_option("-k,--kms-backend-card", args.kms_backend_card,
+  cli_parser.add_option("-k,--kms-backend-card", kms_backend_card,
                         "set DRM device; defaults to 'card0'");
   cli_parser.add_flag("-r,--kms-format-rgb", args.kms_format_rgb,
                       "use RGB pixel format instead of BGR");
@@ -80,12 +85,33 @@ int main(int argc, char **argv) {
   CLI11_PARSE(cli_parser, argc, argv)
 
   auto rt_args = qadx::create_backend_runtime_args(std::move(args));
+  if (rt_args.screen_backend == qadx::screen_type_e::kms) {
+    if (kms_backend_card.empty()) {
+      fs::path kms_driver_path = "/dev/dri/";
+      for (auto const &entry : fs::directory_iterator(kms_driver_path)) {
+        auto const name = entry.path().filename().string();
+        if (name.find("card") == 0)
+          rt_args.kms_backend_cards.push_back(name);
+      }
+    } else {
+      rt_args.kms_backend_cards.push_back(kms_backend_card);
+    }
+  }
+
   auto &io_context = qadx::get_io_context();
   auto server_instance =
       std::make_shared<qadx::server_t>(io_context, std::move(rt_args));
   if (!(*server_instance))
     return EXIT_FAILURE;
   server_instance->run();
+
+  auto const threads =
+      std::max(1, (int)std::thread::hardware_concurrency() - 1);
+  std::vector<std::thread> v{};
+  v.reserve(threads);
+
+  for (auto i = threads; i > 0; --i)
+    v.emplace_back([&io_context] { io_context.run(); });
   io_context.run();
   return EXIT_SUCCESS;
 }

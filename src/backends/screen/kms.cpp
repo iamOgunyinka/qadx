@@ -33,7 +33,8 @@
 #include <memory>
 
 namespace qadx {
-std::string kms_screen_t::list_screens() {
+
+std::vector<details::kms_screen_crtc_t> kms_screen_t::list_screens_impl() {
   int file_descriptor = open(m_card.c_str(), O_RDONLY);
   spdlog::info("FileDescriptor opening for {} {}", m_card, file_descriptor);
 
@@ -49,9 +50,11 @@ std::string kms_screen_t::list_screens() {
     spdlog::error("Is DRM device set correctly?");
     return {};
   }
-
-  std::string reply{};
-  for (int i = 0; i < resources->count_crtcs; ++i) {
+  std::vector<details::kms_screen_crtc_t> screens{};
+  int const count = resources->count_crtcs;
+  if (count > 0)
+    screens.reserve(count);
+  for (int i = 0; i < count; ++i) {
     // A CRTC is simply an object that can scan out a framebuffer to a
     // display sink, and contains mode timing and relative position
     // information.
@@ -61,27 +64,37 @@ std::string kms_screen_t::list_screens() {
                    strerror(errno));
       continue;
     }
-    reply += fmt::format("CRTC: ID={}, mode_valid={}\n", crtc->crtc_id,
-                         crtc->mode_valid);
+    screens.push_back({crtc->crtc_id, crtc->mode_valid});
     drmModeFreeCrtc(crtc);
   }
   drmModeFreeResources(resources);
   close(file_descriptor);
+  return screens;
+}
+
+std::string kms_screen_t::list_screens() {
+  std::string reply{};
+  if (auto const screens = this->list_screens_impl(); !screens.empty()) {
+    for (auto const &screen_info : screens) {
+      reply += fmt::format("CRTC: ID={}, mode_valid={}\n", screen_info.id,
+                           screen_info.valid_mode);
+    }
+  }
   return reply;
 }
 
 bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
-                                     int const screen) {
+                                     int const screen_id) {
   int file_descriptor = open(m_card.c_str(), O_RDWR | O_CLOEXEC);
   if (file_descriptor < 0) {
     spdlog::error("Error opening {}: {}", m_card, strerror(errno));
     return false;
   }
 
-  auto crtc = drmModeGetCrtc(file_descriptor, screen);
+  auto crtc = drmModeGetCrtc(file_descriptor, screen_id);
   if (!crtc) {
     close(file_descriptor);
-    spdlog::error("Error getting CRTC '{}': {}", screen, strerror(errno));
+    spdlog::error("Error getting CRTC '{}': {}", screen_id, strerror(errno));
     return false;
   }
   drmModeFB *fb = drmModeGetFB(file_descriptor, crtc->buffer_id);
@@ -110,10 +123,37 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
   return true;
 }
 
-std::unique_ptr<kms_screen_t> create_instance(std::string const &backend_card,
-                                              int const kms_format_rgb) {
+std::string select_suitable_kms_card(string_list_t const &cards,
+                                     int const use_rgb) {
+  for (auto const &card : cards) {
+    int screen_id = 2;
+    kms_screen_t kms_screen{};
+    kms_screen.m_card += card;
+    kms_screen.m_colorModel = use_rgb;
+    {
+      auto const screens = kms_screen.list_screens_impl();
+      auto valid_screen_iter = std::find_if(
+          screens.begin(), screens.end(),
+          [](auto const &screen_info) { return screen_info.valid_mode == 1; });
+      if (valid_screen_iter != screens.end())
+        screen_id = valid_screen_iter->id;
+    }
+
+    image_data_t image{};
+    if (kms_screen.grab_frame_buffer(image, screen_id))
+      return card;
+  }
+  return {};
+}
+
+std::unique_ptr<kms_screen_t>
+create_instance(string_list_t const &backend_cards, int const kms_format_rgb) {
+  auto const card = select_suitable_kms_card(backend_cards, kms_format_rgb);
+  if (card.empty())
+    return nullptr;
+
   kms_screen_t kms_screen{};
-  kms_screen.m_card += backend_card;
+  kms_screen.m_card += card;
   kms_screen.m_colorModel = kms_format_rgb;
 
   int file_descriptor = open(kms_screen.m_card.c_str(), O_RDWR | O_CLOEXEC);
@@ -126,10 +166,11 @@ std::unique_ptr<kms_screen_t> create_instance(std::string const &backend_card,
 }
 
 std::shared_ptr<kms_screen_t>
-kms_screen_t::create_global_instance(std::string const &backend_card,
+kms_screen_t::create_global_instance(string_list_t const &backend_cards,
                                      int const kms_format_rgb) {
   static std::shared_ptr<kms_screen_t> screen{
-      create_instance(backend_card, kms_format_rgb)};
+      create_instance(backend_cards, kms_format_rgb)};
   return screen;
 }
+
 } // namespace qadx

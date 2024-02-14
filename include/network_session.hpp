@@ -164,8 +164,7 @@ private:
   void screen_request_handler(string_request_t const &, url_query_t const &);
   bool is_closed();
 
-  void send_file(std::filesystem::path const &, boost::string_view,
-                 string_request_t const &);
+  void send_file(std::filesystem::path const &, string_request_t const &);
 
 public:
   session_t(net::io_context &io, net::ip::tcp::socket &&socket,

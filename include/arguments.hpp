@@ -27,6 +27,7 @@
 
 #include "enumerations.hpp"
 #include <string>
+#include <vector>
 
 namespace qadx {
 struct cli_args_t {
@@ -34,7 +35,6 @@ struct cli_args_t {
   int kms_format_rgb = 0;
   std::string input_type = "uinput";
   std::string screen_backend = "kms";
-  std::string kms_backend_card = "card0";
 };
 
 struct runtime_args_t {
@@ -42,7 +42,7 @@ struct runtime_args_t {
   int kms_format_rgb = 0;
   screen_type_e screen_backend = screen_type_e::none;
   input_type_e input_backend = input_type_e::none;
-  std::string kms_backend_card;
+  std::vector<std::string> kms_backend_cards;
 };
 
 } // namespace qadx

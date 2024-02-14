@@ -30,9 +30,19 @@
 #include <memory>
 
 namespace qadx {
+namespace details {
+struct kms_screen_crtc_t {
+  uint32_t id = 0;
+  int valid_mode = 0;
+};
+} // namespace details
+
+using string_list_t = std::vector<std::string>;
+
 struct kms_screen_t final : public base_screen_t {
   static std::shared_ptr<kms_screen_t>
-  create_global_instance(std::string const &backend_card, int kms_format_rgb);
+  create_global_instance(string_list_t const &backend_cards,
+                         int kms_format_rgb);
 
   std::string list_screens() final;
   bool grab_frame_buffer(image_data_t &screen_buffer, int screen) final;
@@ -40,8 +50,11 @@ struct kms_screen_t final : public base_screen_t {
 
 private:
   friend std::unique_ptr<kms_screen_t>
-  create_instance(std::string const &backend_card, int kms_format_rgb);
+  create_instance(string_list_t const &backend_cards, int kms_format_rgb);
+  friend std::string select_suitable_kms_card(string_list_t const &cards,
+                                              int use_rgb);
   kms_screen_t() : base_screen_t() {}
+  std::vector<details::kms_screen_crtc_t> list_screens_impl();
   int m_colorModel = 0;
   std::string m_card = "/dev/dri/";
 };

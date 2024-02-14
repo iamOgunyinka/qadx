@@ -79,7 +79,7 @@ void session_t::http_read_data() {
 }
 
 void session_t::on_header_read(beast::error_code ec, std::size_t const) {
-  if (ec == http::error::end_of_stream)
+  if (ec == http::error::end_of_stream || ec == beast::error::timeout)
     return shutdown_socket();
 
   if (ec) {
@@ -221,7 +221,7 @@ base_screen_t *get_screen_object(runtime_args_t const &args) {
       screen = temp_screen.get();
     } else {
       auto temp_screen = kms_screen_t::create_global_instance(
-          args.kms_backend_card, args.kms_format_rgb);
+          args.kms_backend_cards, args.kms_format_rgb);
       screen = temp_screen.get();
     }
   } catch (std::exception const &) {
@@ -431,11 +431,10 @@ void session_t::screen_request_handler(string_request_t const &request,
     return send_response(server_error("unable to get screenshot", request));
 
   auto const filename = save_image_to_file(image);
-  send_file(filename, "image/png", request);
+  send_file(filename, request);
 }
 
 void session_t::send_file(std::filesystem::path const &file_path,
-                          boost::string_view const content_type,
                           string_request_t const &request) {
   std::error_code ec_{};
   if (!std::filesystem::exists(file_path, ec_))
@@ -449,13 +448,18 @@ void session_t::send_file(std::filesystem::path const &file_path,
         server_error("unable to open file specified", request));
   }
 
+  using http::field;
+
   auto &response =
       m_fileResponse.emplace(std::piecewise_construct, std::make_tuple(),
                              std::make_tuple(m_fileAlloc));
   response.result(http::status::ok);
   response.keep_alive(request.keep_alive());
-  response.set(http::field::server, "qad-software");
-  response.set(http::field::content_type, content_type);
+  response.set(field::server, "qad-software");
+  response.set(field::access_control_allow_origin, "*");
+  response.set(field::access_control_allow_methods, "GET, POST");
+  response.set(field::access_control_allow_headers,
+               "Content-Type, Authorization");
   response.body() = std::move(file);
   response.prepare_payload();
 
