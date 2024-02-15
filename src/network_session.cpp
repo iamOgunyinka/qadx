@@ -29,6 +29,7 @@
 #include <boost/beast/http/read.hpp>
 #include <boost/beast/http/write.hpp>
 #include <fstream>
+#include <iostream>
 #include <random>
 #include <spdlog/spdlog.h>
 
@@ -43,8 +44,8 @@ enum constant_e { RequestBodySize = 1'024 * 1'024 * 50 };
 
 std::optional<endpoint_t::rule_iterator>
 endpoint_t::get_rules(std::string const &target) {
-  auto iter = endpoints.find(target);
-  if (iter == endpoints.end())
+  auto iter = m_endpoints.find(target);
+  if (iter == m_endpoints.end())
     return std::nullopt;
   return iter;
 }
@@ -52,6 +53,75 @@ endpoint_t::get_rules(std::string const &target) {
 std::optional<endpoint_t::rule_iterator>
 endpoint_t::get_rules(boost::string_view const &target) {
   return get_rules(target.to_string());
+}
+
+void endpoint_t::construct_special_placeholder(
+    endpoint_t::special_placeholders_t &placeholder, std::string const &route) {
+  size_t from_pos = 0;
+  auto index = route.find_first_of('{', from_pos);
+  if (index == std::string::npos || index == 0)
+    throw std::runtime_error{"A special route must have a placeholder"};
+
+  std::string const prefix = route.substr(0, index);
+  if (auto const str = utils::trim_copy(prefix); str.empty() || str == "/")
+    throw std::runtime_error("A special placeholder must have a valid prefix");
+
+  size_t end_of_placeholder;
+
+  do {
+    end_of_placeholder = route.find_first_of('}', index);
+    if (end_of_placeholder == std::string::npos)
+      throw std::runtime_error("end of placeholder not found");
+    auto const str_length = end_of_placeholder - index - 1;
+    auto const name = utils::trim_copy(route.substr(index + 1, str_length));
+
+    if (name.empty())
+      throw std::runtime_error("empty placeholder name is not allowed");
+
+    placeholder.placeholders.push_back({name});
+    from_pos = end_of_placeholder + 1;
+    if (from_pos >= route.size())
+      break;
+
+    index = route.find_first_of('{', from_pos);
+    // ensure the character before this is a '/'
+    if (index != std::string::npos && route[index - 1] != '/') {
+      throw std::runtime_error(
+          "special placeholders should be separated by '/'");
+    }
+  } while (index != std::string ::npos);
+
+  if (auto const str_length = route.length() - end_of_placeholder - 1;
+      str_length > 0) {
+    placeholder.suffix = route.substr(end_of_placeholder + 1, str_length);
+    if (placeholder.suffix.back() == '/')
+      placeholder.suffix.pop_back();
+  }
+
+  if (m_specialEndpoints.find(prefix) != m_specialEndpoints.end())
+    throw std::runtime_error("the prefix '" + prefix + "' already exist");
+  m_specialEndpoints[prefix] = std::move(placeholder);
+}
+
+std::optional<endpoint_t::special_placeholders_t>
+endpoint_t::get_special_rules(std::string target) {
+  if (target.back() == '/')
+    target.pop_back();
+
+  for (auto const &[prefix, placeholder] : m_specialEndpoints) {
+    if (target.find(prefix) != 0)
+      continue;
+    if (!placeholder.suffix.empty()) {
+      if (!boost::ends_with(target, placeholder.suffix))
+        continue;
+    }
+
+    auto const count = std::count(target.begin(), target.end(), '/');
+    if (count != placeholder.placeholders.size())
+      continue;
+  }
+
+  return std::nullopt;
 }
 
 std::string save_image_to_file(image_data_t const &image) {
@@ -73,7 +143,7 @@ void session_t::http_read_data() {
   m_buffer.clear();
   m_emptyBodyParser.emplace();
   m_emptyBodyParser->body_limit(RequestBodySize);
-  beast::get_lowest_layer(m_tcpStream).expires_after(std::chrono::seconds(120));
+  beast::get_lowest_layer(m_tcpStream).expires_after(std::chrono::minutes(1));
   http::async_read_header(m_tcpStream, m_buffer, *m_emptyBodyParser,
                           ASYNC_CALLBACK(on_header_read));
 }
@@ -95,7 +165,6 @@ void session_t::on_header_read(beast::error_code ec, std::size_t const) {
 
 void session_t::handle_requests(string_request_t const &request) {
   std::string const request_target{utils::decode_url(request.target())};
-
   if (request_target.empty())
     return error_handler(not_found(request));
 
@@ -103,6 +172,11 @@ void session_t::handle_requests(string_request_t const &request) {
   boost::string_view request_target_view = request_target;
   auto split = utils::split_string_view(request_target_view, "?");
   if (auto iter = m_endpoints.get_rules(split[0]); iter.has_value()) {
+    if (method == http::verb::options) {
+      return send_response(
+          allowed_options(iter.value()->second.verbs, request));
+    }
+
     auto const iter_end = iter.value()->second.verbs.cend();
     auto const found_iter =
         std::find(iter.value()->second.verbs.cbegin(), iter_end, method);
@@ -196,20 +270,23 @@ void session_t::on_data_written(
 std::shared_ptr<session_t> session_t::add_endpoint_interfaces() {
   using http::verb;
 
-  m_endpoints.add_endpoint(
-      "/move", JSON_ROUTE_CALLBACK(move_mouse_request_handler), verb::post);
-  m_endpoints.add_endpoint(
-      "/button", JSON_ROUTE_CALLBACK(button_request_handler), verb::post);
-  m_endpoints.add_endpoint("/touch", JSON_ROUTE_CALLBACK(touch_request_handler),
+  m_endpoints.add_endpoint("/move", ROUTE_CALLBACK(move_mouse_request_handler),
                            verb::post);
-  m_endpoints.add_endpoint("/swipe", JSON_ROUTE_CALLBACK(swipe_request_handler),
+  m_endpoints.add_endpoint("/button", ROUTE_CALLBACK(button_request_handler),
                            verb::post);
-  m_endpoints.add_endpoint("/key", JSON_ROUTE_CALLBACK(key_request_handler),
+  m_endpoints.add_endpoint("/touch", ROUTE_CALLBACK(touch_request_handler),
                            verb::post);
-  m_endpoints.add_endpoint("/text", JSON_ROUTE_CALLBACK(text_request_handler),
+  m_endpoints.add_endpoint("/swipe", ROUTE_CALLBACK(swipe_request_handler),
+                           verb::post);
+  m_endpoints.add_endpoint("/key", ROUTE_CALLBACK(key_request_handler),
+                           verb::post);
+  m_endpoints.add_endpoint("/text", ROUTE_CALLBACK(text_request_handler),
                            verb::post);
   m_endpoints.add_endpoint("/screen", ROUTE_CALLBACK(screen_request_handler),
                            verb::get);
+  m_endpoints.add_special_endpoint("/screen/{screen_number}",
+                                   ROUTE_CALLBACK(screenshot_request_handler),
+                                   verb::get);
   return shared_from_this();
 }
 
@@ -217,12 +294,10 @@ base_screen_t *get_screen_object(runtime_args_t const &args) {
   base_screen_t *screen = nullptr;
   try {
     if (args.screen_backend == screen_type_e::ilm) {
-      auto temp_screen = ilm_screen_t::create_global_instance();
-      screen = temp_screen.get();
+      screen = ilm_screen_t::create_global_instance();
     } else {
-      auto temp_screen = kms_screen_t::create_global_instance(
-          args.kms_backend_cards, args.kms_format_rgb);
-      screen = temp_screen.get();
+      screen = kms_screen_t::create_global_instance(args.kms_backend_cards,
+                                                    args.kms_format_rgb);
     }
   } catch (std::exception const &) {
   }
@@ -305,11 +380,14 @@ void session_t::touch_request_handler(string_request_t const &request,
     auto const y = y_iter->second.get<json::number_integer_t>();
     auto const event = event_iter->second.get<json::number_integer_t>();
     auto const duration = duration_iter->second.get<json::number_integer_t>();
+    spdlog::info("X: {}, Y: {}, event: {}, duration: {}", x, y, event,
+                 duration);
     std::visit(
         [x, y, event, duration, request,
          self = shared_from_this()](auto &&input_object) {
           if (input_object.touch(x, y, duration, event))
             return self->send_response(self->json_success("OK", request));
+          spdlog::info("Handling error from calling ::touch");
           self->error_handler(self->server_error("Error", request));
         },
         get_input_object(m_rt_arguments));
@@ -455,7 +533,7 @@ void session_t::send_file(std::filesystem::path const &file_path,
                              std::make_tuple(m_fileAlloc));
   response.result(http::status::ok);
   response.keep_alive(request.keep_alive());
-  response.set(field::server, "qad-software");
+  response.set(field::server, "qadx-server");
   response.set(field::access_control_allow_origin, "*");
   response.set(field::access_control_allow_methods, "GET, POST");
   response.set(field::access_control_allow_headers,
@@ -494,6 +572,31 @@ string_response_t session_t::method_not_allowed(string_request_t const &req) {
   return get_error("method not allowed", http::status::method_not_allowed, req);
 }
 
+string_response_t
+session_t::allowed_options(std::vector<http::verb> const &verbs,
+                           string_request_t const &request) {
+  std::string buffer{};
+  for (size_t i = 0; i < verbs.size() - 1; ++i)
+    buffer += std::string(http::to_string(verbs[i])) + ", ";
+  buffer += std::string(http::to_string(verbs.back()));
+
+  using http::field;
+
+  string_response_t response{http::status::ok, request.version()};
+  response.set(field::allow, buffer);
+  response.set(field::cache_control, "max-age=604800");
+  response.set(field::server, "qadx-server");
+  response.set(field::access_control_allow_origin, "*");
+  response.set(field::access_control_allow_methods, "GET, POST");
+  response.set(http::field::accept_language, "en-us,en;q=0.5");
+  response.set(field::access_control_allow_headers,
+               "Content-Type, Authorization");
+  response.keep_alive(request.keep_alive());
+  response.body() = {};
+  response.prepare_payload();
+  return response;
+}
+
 string_response_t session_t::get_error(std::string const &error_message,
                                        http::status const status,
                                        string_request_t const &req) {
@@ -501,8 +604,15 @@ string_response_t session_t::get_error(std::string const &error_message,
   result_obj["message"] = error_message;
   json result = result_obj;
 
+  using http::field;
+
   string_response_t response{status, req.version()};
   response.set(http::field::content_type, CONTENT_TYPE_JSON);
+  response.set(field::access_control_allow_origin, "*");
+  response.set(field::access_control_allow_methods, "GET, POST");
+  response.set(field::access_control_allow_headers,
+               "Content-Type, Authorization");
+
   response.keep_alive(req.keep_alive());
   response.body() = result.dump();
   response.prepare_payload();
@@ -511,8 +621,14 @@ string_response_t session_t::get_error(std::string const &error_message,
 
 string_response_t session_t::json_success(json const &body,
                                           string_request_t const &req) {
+  using http::field;
   string_response_t response{http::status::ok, req.version()};
   response.set(http::field::content_type, CONTENT_TYPE_JSON);
+  response.set(field::access_control_allow_origin, "*");
+  response.set(field::access_control_allow_methods, "GET, POST");
+  response.set(field::access_control_allow_headers,
+               "Content-Type, Authorization");
+
   response.keep_alive(req.keep_alive());
   response.body() = body.dump();
   response.prepare_payload();
@@ -525,7 +641,12 @@ string_response_t session_t::success(char const *message,
   result_obj["message"] = message;
   json result(result_obj);
 
+  using http::field;
   string_response_t response{http::status::ok, req.version()};
+  response.set(field::access_control_allow_origin, "*");
+  response.set(field::access_control_allow_methods, "GET, POST");
+  response.set(field::access_control_allow_headers,
+               "Content-Type, Authorization");
   response.set(http::field::content_type, CONTENT_TYPE_JSON);
   response.keep_alive(req.keep_alive());
   response.body() = result.dump();

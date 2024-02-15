@@ -28,7 +28,7 @@
 
 #define QAD_CHECK_ERR(expression)                                              \
   {                                                                            \
-    if (!(expression)) {                                                       \
+    if ((expression) < 0) {                                                       \
       spdlog::error("error: {} {}, line: {}, file: {}", (expression),          \
                     strerror(errno), __LINE__, __FILE__);                      \
       throw std::runtime_error("");                                            \

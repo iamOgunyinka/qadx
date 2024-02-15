@@ -40,7 +40,7 @@ struct kms_screen_crtc_t {
 using string_list_t = std::vector<std::string>;
 
 struct kms_screen_t final : public base_screen_t {
-  static std::shared_ptr<kms_screen_t>
+  static kms_screen_t *
   create_global_instance(string_list_t const &backend_cards,
                          int kms_format_rgb);
 

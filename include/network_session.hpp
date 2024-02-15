@@ -73,7 +73,6 @@ namespace http = beast::http;
 using string_response_t = http::response<http::string_body>;
 using string_request_t = http::request<http::string_body>;
 using url_query_t = std::map<boost::string_view, boost::string_view>;
-using dynamic_request = http::request_parser<http::string_body>;
 using nlohmann::json;
 
 using callback_t =
@@ -90,8 +89,28 @@ struct rule_t {
 };
 
 class endpoint_t {
-  std::map<std::string, rule_t> endpoints;
+  struct special_placeholders_t {
+    struct key_value_pair_t {
+      std::string key{};
+      std::string value{};
+    };
+    std::vector<key_value_pair_t> placeholders;
+    std::optional<rule_t> rule = std::nullopt;
+    std::string suffix;
+
+    special_placeholders_t() = default;
+    template <typename Verb, typename... Verbs>
+    special_placeholders_t(callback_t &&cb, Verb &&verb, Verbs &&...verbs)
+        : rule(std::move(cb), std::forward<Verb>(verb),
+               std::forward<Verbs>(verbs)...) {}
+  };
+
+  std::map<std::string, rule_t> m_endpoints;
+  std::map<std::string, special_placeholders_t> m_specialEndpoints;
   using rule_iterator = std::map<std::string, rule_t>::iterator;
+
+  void construct_special_placeholder(special_placeholders_t &,
+                                     std::string const &);
 
 public:
   template <typename Verb, typename... Verbs>
@@ -99,13 +118,23 @@ public:
                     Verbs &&...verbs) {
     if (route.empty() || route[0] != '/')
       throw std::runtime_error{"A valid route starts with a /"};
-    endpoints.emplace(route, rule_t{std::move(cb), std::forward<Verb>(verb),
-                                    std::forward<Verbs>(verbs)...});
+    m_endpoints.emplace(route, rule_t{std::move(cb), std::forward<Verb>(verb),
+                                      std::forward<Verbs>(verbs)...});
+  }
+
+  template <typename Verb, typename... Verbs>
+  void add_special_endpoint(std::string const &route, callback_t &&cb,
+                            Verb &&verb, Verbs &&...verbs) {
+    if (route.empty() || route[0] != '/')
+      throw std::runtime_error{"A valid route starts with a /"};
+    special_placeholders_t placeholder(std::move(cb), std::forward<Verb>(verb),
+                                       std::forward<Verbs>(verbs)...);
+    construct_special_placeholder(placeholder, route);
   }
 
   std::optional<rule_iterator> get_rules(std::string const &target);
-
   std::optional<rule_iterator> get_rules(boost::string_view const &target);
+  std::optional<special_placeholders_t> get_special_rules(std::string);
 };
 
 class session_t : public std::enable_shared_from_this<session_t> {
@@ -152,6 +181,8 @@ private:
                                         string_request_t const &);
   static string_response_t get_error(std::string const &, http::status,
                                      string_request_t const &);
+  static string_response_t allowed_options(std::vector<http::verb> const &,
+                                           string_request_t const &);
   static url_query_t split_optional_queries(boost::string_view const &args);
   bool is_json_request() const;
   void move_mouse_request_handler(string_request_t const &,
@@ -162,6 +193,8 @@ private:
   void key_request_handler(string_request_t const &, url_query_t const &);
   void text_request_handler(string_request_t const &, url_query_t const &);
   void screen_request_handler(string_request_t const &, url_query_t const &);
+  void screenshot_request_handler(string_request_t const &,
+                                  url_query_t const &);
   bool is_closed();
 
   void send_file(std::filesystem::path const &, string_request_t const &);

@@ -41,9 +41,9 @@ struct devices_t {
 
 struct uinput_backend_t {
   uinput_backend_t() : input_devices{} {
-    input_devices.keyboard = create_keyboard();
     input_devices.mouse = create_mouse();
     input_devices.touch = create_touch_device();
+    input_devices.keyboard = create_keyboard();
   }
 
   ~uinput_backend_t() = default;
@@ -85,7 +85,7 @@ struct uinput_backend_t {
   }
 
   bool swipe(int const x1, int const y1, int const x2, int const y2,
-                  int const velocity, int const event) {
+             int const velocity, int const event) {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0)
       return send_swipe(x1, y1, x2, y2, velocity, fd);
     return false;

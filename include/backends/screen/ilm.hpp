@@ -63,7 +63,7 @@ struct screenshot_t {
 };
 
 struct ilm_screen_t final : public base_screen_t {
-  static std::shared_ptr<ilm_screen_t> create_global_instance();
+  static ilm_screen_t *create_global_instance();
 
   std::string list_screens() final { return {}; }
   bool grab_frame_buffer(image_data_t &screen_buffer, int screen) final;

@@ -36,8 +36,6 @@ namespace qadx {
 
 std::vector<details::kms_screen_crtc_t> kms_screen_t::list_screens_impl() {
   int file_descriptor = open(m_card.c_str(), O_RDONLY);
-  spdlog::info("FileDescriptor opening for {} {}", m_card, file_descriptor);
-
   if (file_descriptor < 0) {
     spdlog::error("Error opening {}: {}", m_card, strerror(errno));
     return {};
@@ -165,12 +163,11 @@ create_instance(string_list_t const &backend_cards, int const kms_format_rgb) {
   return std::make_unique<kms_screen_t>(kms_screen);
 }
 
-std::shared_ptr<kms_screen_t>
+kms_screen_t *
 kms_screen_t::create_global_instance(string_list_t const &backend_cards,
                                      int const kms_format_rgb) {
-  static std::shared_ptr<kms_screen_t> screen{
-      create_instance(backend_cards, kms_format_rgb)};
-  return screen;
+  static auto screen = create_instance(backend_cards, kms_format_rgb);
+  return screen.get();
 }
 
 } // namespace qadx
