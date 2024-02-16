@@ -123,14 +123,14 @@ std::string decode_url(boost::string_view const &encoded_string) {
   return src;
 }
 
-std::vector<boost::string_view> split_string_view(boost::string_view const &str,
-                                                  char const *const delim) {
+std::vector<std::string> split_string_view(boost::string_view const &str,
+                                           char const *const delim) {
   std::size_t const delim_length = std::strlen(delim);
   std::size_t from_pos{};
   std::size_t index{str.find(delim, from_pos)};
   if (index == std::string::npos)
-    return {str};
-  std::vector<boost::string_view> result{};
+    return {str.to_string()};
+  std::vector<std::string> result{};
   while (index != std::string::npos) {
     result.emplace_back(str.data() + from_pos, index - from_pos);
     from_pos = index + delim_length;

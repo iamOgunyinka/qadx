@@ -25,7 +25,6 @@
 
 #pragma once
 
-#include "backend.hpp"
 #include "base_screen.hpp"
 #include <memory>
 
@@ -40,7 +39,7 @@ struct kms_screen_crtc_t {
 using string_list_t = std::vector<std::string>;
 
 struct kms_screen_t final : public base_screen_t {
-  static std::shared_ptr<kms_screen_t>
+  static kms_screen_t *
   create_global_instance(string_list_t const &backend_cards,
                          int kms_format_rgb);
 
@@ -55,7 +54,6 @@ private:
                                               int use_rgb);
   kms_screen_t() : base_screen_t() {}
   std::vector<details::kms_screen_crtc_t> list_screens_impl();
-  int m_colorModel = 0;
   std::string m_card = "/dev/dri/";
 };
 } // namespace qadx

@@ -82,12 +82,12 @@ set(SRC_FILES
       src/images/png.cpp
       src/server.cpp
       src/network_session.cpp
-      src/string_utils.cpp)
+      src/string_utils.cpp
+      src/endpoint.cpp)
 
 # Header Files
 set(HEADERS_FILES
       include/image.hpp
-      include/backend.hpp
       include/backends/input/evdev.hpp
       include/backends/input/common.hpp
       include/backends/input/uinput.hpp
@@ -101,6 +101,8 @@ set(HEADERS_FILES
       include/arguments.hpp
       include/enumerations.hpp
       include/backends/screen/base_screen.hpp
+      include/endpoint.hpp
+      include/backends/input/base_input.hpp
 )
 
 source_group("Headers" FILES ${HEADERS_FILES})

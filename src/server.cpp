@@ -31,12 +31,17 @@
 #include <spdlog/spdlog.h>
 
 namespace qadx {
-server_t::server_t(net::io_context &context, runtime_args_t &&args)
+server_t::server_t(net::io_context &context, runtime_args_t &&args_)
     : m_ioContext(context), m_acceptor(net::make_strand(m_ioContext)),
-      m_args(std::move(args)) {
+      m_args(std::move(args_)) {
   beast::error_code ec{}; // used when we don't need to throw all around
   auto const ip_address = "0.0.0.0";
   spdlog::info("Server running on {}:{}", ip_address, m_args.port);
+  spdlog::info("Using '{}' for input devices",
+               m_args.input_backend == input_type_e::uinput ? "uinput"
+                                                            : "evdev");
+  spdlog::info("Using '{}' for screen devices",
+               m_args.screen_backend == screen_type_e::kms ? "kms" : "ilm");
 
   tcp::endpoint endpoint(net::ip::make_address(ip_address), m_args.port);
   ec = m_acceptor.open(endpoint.protocol(), ec);

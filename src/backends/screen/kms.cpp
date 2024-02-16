@@ -27,6 +27,7 @@
 #include "backends/input/common.hpp"
 #include "drm_mode.h"
 
+#include <spdlog/spdlog.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
@@ -36,8 +37,6 @@ namespace qadx {
 
 std::vector<details::kms_screen_crtc_t> kms_screen_t::list_screens_impl() {
   int file_descriptor = open(m_card.c_str(), O_RDONLY);
-  spdlog::info("FileDescriptor opening for {} {}", m_card, file_descriptor);
-
   if (file_descriptor < 0) {
     spdlog::error("Error opening {}: {}", m_card, strerror(errno));
     return {};
@@ -123,20 +122,18 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
   return true;
 }
 
-std::string select_suitable_kms_card(string_list_t const &cards,
-                                     int const use_rgb) {
+std::string select_suitable_kms_card(string_list_t const &cards, int const) {
   for (auto const &card : cards) {
     int screen_id = 2;
     kms_screen_t kms_screen{};
     kms_screen.m_card += card;
-    kms_screen.m_colorModel = use_rgb;
     {
       auto const screens = kms_screen.list_screens_impl();
       auto valid_screen_iter = std::find_if(
           screens.begin(), screens.end(),
           [](auto const &screen_info) { return screen_info.valid_mode == 1; });
       if (valid_screen_iter != screens.end())
-        screen_id = valid_screen_iter->id;
+        screen_id = (int)valid_screen_iter->id;
     }
 
     image_data_t image{};
@@ -154,7 +151,6 @@ create_instance(string_list_t const &backend_cards, int const kms_format_rgb) {
 
   kms_screen_t kms_screen{};
   kms_screen.m_card += card;
-  kms_screen.m_colorModel = kms_format_rgb;
 
   int file_descriptor = open(kms_screen.m_card.c_str(), O_RDWR | O_CLOEXEC);
   if (file_descriptor < 0) {
@@ -165,12 +161,11 @@ create_instance(string_list_t const &backend_cards, int const kms_format_rgb) {
   return std::make_unique<kms_screen_t>(kms_screen);
 }
 
-std::shared_ptr<kms_screen_t>
+kms_screen_t *
 kms_screen_t::create_global_instance(string_list_t const &backend_cards,
                                      int const kms_format_rgb) {
-  static std::shared_ptr<kms_screen_t> screen{
-      create_instance(backend_cards, kms_format_rgb)};
-  return screen;
+  static auto screen = create_instance(backend_cards, kms_format_rgb);
+  return screen.get();
 }
 
 } // namespace qadx

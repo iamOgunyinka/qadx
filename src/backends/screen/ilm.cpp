@@ -26,6 +26,7 @@
 #include "backends/screen/ilm.hpp"
 #include "image.hpp"
 #include <netinet/in.h>
+#include <spdlog/spdlog.h>
 
 namespace qadx {
 void wm_screen_listener_screen_id(void *data, struct ivi_wm_screen *,
@@ -81,7 +82,6 @@ void registry_handler(void *data, wl_registry *registry, uint32_t const id,
                       char const *interface, uint32_t const) {
   auto wd = reinterpret_cast<wayland_data_t *>(data);
   if (interface == std::string("wl_output")) {
-    spdlog::info("Creating wayland_screen_t instance. ID: {}", id);
     auto output_screen = new wayland_screen_t();
     output_screen->output = reinterpret_cast<wl_output *>(
         wl_registry_bind(registry, id, &wl_output_interface, 1));
@@ -89,14 +89,11 @@ void registry_handler(void *data, wl_registry *registry, uint32_t const id,
     wl_output_add_listener(output_screen->output, &output_listener,
                            output_screen);
     if (wd->wm) {
-      spdlog::info("WD->wm is valid");
       output_screen->wm_screen =
           ivi_wm_create_screen(wd->wm, output_screen->output);
       ivi_wm_screen_add_listener(output_screen->wm_screen, &wm_screen_listener,
                                  output_screen);
     }
-    spdlog::info("Length of output list is {}",
-                 wl_list_length(&wd->output_list));
     wl_list_insert(&wd->output_list, &output_screen->wy_link);
   } else if (interface == std::string("ivi_wm")) {
     auto r = wl_registry_bind(registry, id, &ivi_wm_interface, 1);
@@ -155,9 +152,9 @@ std::unique_ptr<ilm_screen_t> create_instance() {
   return std::unique_ptr<ilm_screen_t>(new ilm_screen_t(std::move(wd)));
 }
 
-std::shared_ptr<ilm_screen_t> ilm_screen_t::create_global_instance() {
-  static std::shared_ptr<ilm_screen_t> instance{create_instance()};
-  return instance;
+ilm_screen_t *ilm_screen_t::create_global_instance() {
+  static auto instance = create_instance();
+  return instance.get();
 }
 
 void ivi_screenshot_done(void *data, ivi_screenshot *ivi_screenshot,
@@ -287,7 +284,6 @@ bool ilm_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
 }
 
 ilm_screen_t::~ilm_screen_t() {
-  spdlog::info("ILM destructor called");
   if (!wayland_data.display)
     return;
 
@@ -311,6 +307,5 @@ ilm_screen_t::~ilm_screen_t() {
   if (wayland_data.queue)
     wl_event_queue_destroy(wayland_data.queue);
   wl_display_disconnect(wayland_data.display);
-  spdlog::info("Dtor done.");
 }
 } // namespace qadx

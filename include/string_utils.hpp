@@ -38,8 +38,8 @@ void trim(std::string &s);
 std::string ltrim_copy(std::string s);
 std::string rtrim_copy(std::string s);
 std::string trim_copy(std::string const &s);
-std::vector<boost::string_view> split_string_view(boost::string_view const &str,
-                                                  char const *delim);
+std::vector<std::string> split_string_view(boost::string_view const &str,
+                                           char const *delim);
 std::string decode_url(boost::string_view const &encoded_string);
 std::string get_random_string(size_t length);
 char get_random_char();
