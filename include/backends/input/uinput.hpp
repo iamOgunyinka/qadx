@@ -25,10 +25,19 @@
 
 #pragma once
 
-#include "backend.hpp"
 #include "backends/input/common.hpp"
-
 #include <linux/uinput.h>
+#include <memory>
+
+#define QAD_CHECK_NEG_ERR(expression)                                          \
+  {                                                                            \
+    if ((expression) < 0) {                                                    \
+      fprintf(stderr, "error: %d %s, line: %d, file: %s", (expression),        \
+              strerror(errno), __LINE__, __FILE__);                            \
+      fflush(stderr);                                                          \
+      throw std::runtime_error("");                                            \
+    }                                                                          \
+  }
 
 namespace qadx {
 using namespace qadx::utils;
@@ -39,16 +48,21 @@ struct devices_t {
   int keyboard{};
 };
 
-struct uinput_backend_t {
-  uinput_backend_t() : input_devices{} {
+class uinput_backend_t final : public base_input_t {
+  uinput_backend_t() : base_input_t(), input_devices{} {
     input_devices.mouse = create_mouse();
     input_devices.touch = create_touch_device();
     input_devices.keyboard = create_keyboard();
   }
 
-  ~uinput_backend_t() = default;
+public:
+  ~uinput_backend_t() override = default;
+  static uinput_backend_t *create_global_instance() {
+    static std::unique_ptr<uinput_backend_t> ptr(new uinput_backend_t());
+    return ptr.get();
+  }
 
-  bool move(int const x, int const y, int const event) {
+  bool move(int const x, int const y, int const event) final {
     int &fd = get_uinput_file_descriptor(event);
     if (fd < 0)
       return false;
@@ -59,7 +73,7 @@ struct uinput_backend_t {
     return send_syn_event(fd);
   }
 
-  bool button(int const value, int const event) {
+  bool button(int const value, int const event) final {
     int &fd = get_uinput_file_descriptor(event);
     if (fd < 0)
       return false;
@@ -74,7 +88,8 @@ struct uinput_backend_t {
     return send_syn_event(event);
   }
 
-  bool touch(int const x, int const y, int const duration, int const event) {
+  bool touch(int const x, int const y, int const duration,
+             int const event) final {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0) {
       bool const succeed = send_touch(x, y, duration, fd);
       if (!succeed)
@@ -85,13 +100,13 @@ struct uinput_backend_t {
   }
 
   bool swipe(int const x1, int const y1, int const x2, int const y2,
-             int const velocity, int const event) {
+             int const velocity, int const event) final {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0)
       return send_swipe(x1, y1, x2, y2, velocity, fd);
     return false;
   }
 
-  bool key(int const key, int const event) {
+  bool key(int const key, int const event) final {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0) {
       if (!send_key_event(key, fd)) {
         close(fd);
@@ -102,7 +117,7 @@ struct uinput_backend_t {
     return false;
   }
 
-  bool text(std::vector<int> const &key_codes, int const event) {
+  bool text(std::vector<int> const &key_codes, int const event) final {
     if (int &fd = get_uinput_file_descriptor(event); fd > 0)
       return send_text_event(key_codes, fd);
     return false;
@@ -192,9 +207,9 @@ private:
   static int create_keyboard() {
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 
-    QAD_CHECK_ERR(fd)
+    QAD_CHECK_NEG_ERR(fd)
     /* enable key input events */
-    QAD_CHECK_ERR(ioctl(fd, UI_SET_EVBIT, EV_KEY))
+    QAD_CHECK_NEG_ERR(ioctl(fd, UI_SET_EVBIT, EV_KEY))
 
     for (int i = KEY_ESC; i <= KEY_RIGHT; i++)
       ioctl(fd, UI_SET_KEYBIT, i);
@@ -206,8 +221,8 @@ private:
     setup.id.product = 0x5678; /* sample product */
     strcpy(setup.name, "QAD keyboard device");
 
-    QAD_CHECK_ERR(ioctl(fd, UI_DEV_SETUP, &setup))
-    QAD_CHECK_ERR(ioctl(fd, UI_DEV_CREATE))
+    QAD_CHECK_NEG_ERR(ioctl(fd, UI_DEV_SETUP, &setup))
+    QAD_CHECK_NEG_ERR(ioctl(fd, UI_DEV_CREATE))
 
     return fd;
   }

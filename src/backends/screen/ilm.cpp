@@ -26,6 +26,7 @@
 #include "backends/screen/ilm.hpp"
 #include "image.hpp"
 #include <netinet/in.h>
+#include <spdlog/spdlog.h>
 
 namespace qadx {
 void wm_screen_listener_screen_id(void *data, struct ivi_wm_screen *,

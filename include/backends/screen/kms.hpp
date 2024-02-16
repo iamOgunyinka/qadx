@@ -25,7 +25,6 @@
 
 #pragma once
 
-#include "backend.hpp"
 #include "base_screen.hpp"
 #include <memory>
 
@@ -55,7 +54,6 @@ private:
                                               int use_rgb);
   kms_screen_t() : base_screen_t() {}
   std::vector<details::kms_screen_crtc_t> list_screens_impl();
-  int m_colorModel = 0;
   std::string m_card = "/dev/dri/";
 };
 } // namespace qadx

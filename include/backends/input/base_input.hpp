@@ -24,13 +24,18 @@
  */
 
 #pragma once
-#include <spdlog/spdlog.h>
+#include <vector>
 
-#define QAD_CHECK_ERR(expression)                                              \
-  {                                                                            \
-    if ((expression) < 0) {                                                       \
-      spdlog::error("error: {} {}, line: {}, file: {}", (expression),          \
-                    strerror(errno), __LINE__, __FILE__);                      \
-      throw std::runtime_error("");                                            \
-    }                                                                          \
-  }
+namespace qadx {
+struct base_input_t {
+  base_input_t() = default;
+  virtual ~base_input_t() = default;
+  virtual bool move(int x_axis, int y_axis, int event) = 0;
+  virtual bool button(int value, int event) = 0;
+  virtual bool touch(int x, int y, int duration, int event) = 0;
+  virtual bool swipe(int x1, int y1, int x2, int y2, int velocity,
+                     int event) = 0;
+  virtual bool key(int key, int event) = 0;
+  virtual bool text(std::vector<int> const &key_codes, int event) = 0;
+};
+} // namespace qadx
