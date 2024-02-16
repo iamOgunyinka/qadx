@@ -29,8 +29,6 @@
 #include <boost/beast/http/read.hpp>
 #include <boost/beast/http/write.hpp>
 #include <fstream>
-#include <iostream>
-#include <random>
 #include <spdlog/spdlog.h>
 
 #include "backends/screen/ilm.hpp"
@@ -41,88 +39,6 @@
 
 namespace qadx {
 enum constant_e { RequestBodySize = 1'024 * 1'024 * 50 };
-
-std::optional<endpoint_t::rule_iterator>
-endpoint_t::get_rules(std::string const &target) {
-  auto iter = m_endpoints.find(target);
-  if (iter == m_endpoints.end())
-    return std::nullopt;
-  return iter;
-}
-
-std::optional<endpoint_t::rule_iterator>
-endpoint_t::get_rules(boost::string_view const &target) {
-  return get_rules(target.to_string());
-}
-
-void endpoint_t::construct_special_placeholder(
-    endpoint_t::special_placeholders_t &placeholder, std::string const &route) {
-  size_t from_pos = 0;
-  auto index = route.find_first_of('{', from_pos);
-  if (index == std::string::npos || index == 0)
-    throw std::runtime_error{"A special route must have a placeholder"};
-
-  std::string const prefix = route.substr(0, index);
-  if (auto const str = utils::trim_copy(prefix); str.empty() || str == "/")
-    throw std::runtime_error("A special placeholder must have a valid prefix");
-
-  size_t end_of_placeholder;
-
-  do {
-    end_of_placeholder = route.find_first_of('}', index);
-    if (end_of_placeholder == std::string::npos)
-      throw std::runtime_error("end of placeholder not found");
-    auto const str_length = end_of_placeholder - index - 1;
-    auto const name = utils::trim_copy(route.substr(index + 1, str_length));
-
-    if (name.empty())
-      throw std::runtime_error("empty placeholder name is not allowed");
-
-    placeholder.placeholders.push_back({name});
-    from_pos = end_of_placeholder + 1;
-    if (from_pos >= route.size())
-      break;
-
-    index = route.find_first_of('{', from_pos);
-    // ensure the character before this is a '/'
-    if (index != std::string::npos && route[index - 1] != '/') {
-      throw std::runtime_error(
-          "special placeholders should be separated by '/'");
-    }
-  } while (index != std::string ::npos);
-
-  if (auto const str_length = route.length() - end_of_placeholder - 1;
-      str_length > 0) {
-    placeholder.suffix = route.substr(end_of_placeholder + 1, str_length);
-    if (placeholder.suffix.back() == '/')
-      placeholder.suffix.pop_back();
-  }
-
-  if (m_specialEndpoints.find(prefix) != m_specialEndpoints.end())
-    throw std::runtime_error("the prefix '" + prefix + "' already exist");
-  m_specialEndpoints[prefix] = std::move(placeholder);
-}
-
-std::optional<endpoint_t::special_placeholders_t>
-endpoint_t::get_special_rules(std::string target) {
-  if (target.back() == '/')
-    target.pop_back();
-
-  for (auto const &[prefix, placeholder] : m_specialEndpoints) {
-    if (target.find(prefix) != 0)
-      continue;
-    if (!placeholder.suffix.empty()) {
-      if (!boost::ends_with(target, placeholder.suffix))
-        continue;
-    }
-
-    auto const count = std::count(target.begin(), target.end(), '/');
-    if (count != placeholder.placeholders.size())
-      continue;
-  }
-
-  return std::nullopt;
-}
 
 std::string save_image_to_file(image_data_t const &image) {
   auto const temp_path =
@@ -165,13 +81,18 @@ void session_t::on_header_read(beast::error_code ec, std::size_t const) {
 
 void session_t::handle_requests(string_request_t const &request) {
   std::string const request_target{utils::decode_url(request.target())};
+  m_thisRequest = request;
+
   if (request_target.empty())
     return error_handler(not_found(request));
 
   auto const method = request.method();
   boost::string_view request_target_view = request_target;
   auto split = utils::split_string_view(request_target_view, "?");
-  if (auto iter = m_endpoints.get_rules(split[0]); iter.has_value()) {
+  auto const &target = split[0];
+
+  // check the usual rules "table", otherwise check the special routes
+  if (auto iter = m_endpoints.get_rules(target); iter.has_value()) {
     if (method == http::verb::options) {
       return send_response(
           allowed_options(iter.value()->second.verbs, request));
@@ -183,10 +104,29 @@ void session_t::handle_requests(string_request_t const &request) {
     if (found_iter == iter_end)
       return error_handler(method_not_allowed(request));
     boost::string_view const query_string = split.size() > 1 ? split[1] : "";
-    auto url_query_{split_optional_queries(query_string)};
-    return iter.value()->second.route_callback(request, url_query_);
+    auto url_query{split_optional_queries(query_string)};
+    return iter.value()->second.route_callback(url_query);
   }
-  return error_handler(not_found(request));
+
+  auto res = m_endpoints.get_special_rules(target);
+  if (!res.has_value())
+    return error_handler(not_found(request));
+
+  auto &placeholder = *res;
+  if (method == http::verb::options)
+    return send_response(allowed_options(placeholder.rule->verbs, request));
+  auto &rule = placeholder.rule.value();
+  auto const found_iter =
+      std::find(rule.verbs.cbegin(), rule.verbs.cend(), method);
+  if (found_iter == rule.verbs.end())
+    return error_handler(method_not_allowed(request));
+
+  boost::string_view const query_string = split.size() > 1 ? split[1] : "";
+  auto url_query{split_optional_queries(query_string)};
+
+  for (auto const &[key, value] : placeholder.placeholders)
+    url_query[key] = value;
+  rule.route_callback(url_query);
 }
 
 url_query_t
@@ -304,15 +244,17 @@ base_screen_t *get_screen_object(runtime_args_t const &args) {
   return screen;
 }
 
-input_variant_t get_input_object(runtime_args_t const &args) {
+base_input_t *get_input_object(runtime_args_t const &args) {
+  base_input_t *base = nullptr;
   if (args.input_backend == input_type_e::evdev)
-    return ev_dev_backend_t();
+    base = ev_dev_backend_t::create_global_instance();
   else
-    return uinput_backend_t();
+    base = uinput_backend_t::create_global_instance();
+  return base;
 }
 
-void session_t::move_mouse_request_handler(string_request_t const &request,
-                                           url_query_t const &) {
+void session_t::move_mouse_request_handler(url_query_t const &) {
+  auto &request = m_thisRequest;
   try {
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto x_iter = json_root.find("x");
@@ -325,46 +267,41 @@ void session_t::move_mouse_request_handler(string_request_t const &request,
     auto const x = x_iter->second.get<json::number_integer_t>();
     auto const y = y_iter->second.get<json::number_integer_t>();
     auto const event = event_iter->second.get<json::number_integer_t>();
-    std::visit(
-        [x, y, event, request, self = shared_from_this()](auto &&input_object) {
-          if (input_object.move(x, y, event))
-            return self->send_response(self->json_success("OK", request));
-          self->error_handler(self->server_error("Error", request));
-        },
-        get_input_object(m_rt_arguments));
+    auto input_object = get_input_object(m_rt_arguments);
+    if (!input_object->move(x, y, event))
+      error_handler(server_error("Error", request));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
+  send_response(json_success("OK", request));
 }
 
-void session_t::button_request_handler(string_request_t const &request,
-                                       url_query_t const &) {
+void session_t::button_request_handler(url_query_t const &) {
+  auto &request = m_thisRequest;
   try {
+
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto event_iter = json_root.find("event");
     auto value_iter = json_root.find("value");
-    if (utils::any_element_is_invalid(json_root, value_iter, event_iter)) {
+
+    if (utils::any_element_is_invalid(json_root, value_iter, event_iter))
       return error_handler(bad_request("event or value is not found", request));
-    }
+
     auto const event = event_iter->second.get<json::number_integer_t>();
     auto const value = value_iter->second.get<json::number_integer_t>();
-    std::visit(
-        [value, event, request,
-         self = shared_from_this()](auto &&input_object) {
-          if (input_object.button(value, event))
-            return self->send_response(self->json_success("OK", request));
-          self->error_handler(self->server_error("Error", request));
-        },
-        get_input_object(m_rt_arguments));
+    auto input_object = get_input_object(m_rt_arguments);
+    if (!input_object->button(value, event))
+      return error_handler(server_error("Error", request));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
+  send_response(json_success("OK", request));
 }
 
-void session_t::touch_request_handler(string_request_t const &request,
-                                      url_query_t const &) {
+void session_t::touch_request_handler(url_query_t const &) {
+  auto &request = m_thisRequest;
   try {
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto x_iter = json_root.find("x");
@@ -382,23 +319,18 @@ void session_t::touch_request_handler(string_request_t const &request,
     auto const duration = duration_iter->second.get<json::number_integer_t>();
     spdlog::info("X: {}, Y: {}, event: {}, duration: {}", x, y, event,
                  duration);
-    std::visit(
-        [x, y, event, duration, request,
-         self = shared_from_this()](auto &&input_object) {
-          if (input_object.touch(x, y, duration, event))
-            return self->send_response(self->json_success("OK", request));
-          spdlog::info("Handling error from calling ::touch");
-          self->error_handler(self->server_error("Error", request));
-        },
-        get_input_object(m_rt_arguments));
+    auto input_object = get_input_object(m_rt_arguments);
+    if (!input_object->touch(x, y, duration, event))
+      return error_handler(server_error("Error", request));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
+  send_response(json_success("OK", request));
 }
 
-void session_t::key_request_handler(string_request_t const &request,
-                                    url_query_t const &) {
+void session_t::key_request_handler(url_query_t const &) {
+  auto &request = m_thisRequest;
   try {
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto key_iter = json_root.find("key");
@@ -408,21 +340,18 @@ void session_t::key_request_handler(string_request_t const &request,
     }
     auto const event = event_iter->second.get<json::number_integer_t>();
     auto const key = key_iter->second.get<json::number_integer_t>();
-    std::visit(
-        [key, event, request, self = shared_from_this()](auto &&input_object) {
-          if (input_object.key(key, event))
-            return self->send_response(self->json_success("OK", request));
-          self->error_handler(self->server_error("Error", request));
-        },
-        get_input_object(m_rt_arguments));
+    auto input_object = get_input_object(m_rt_arguments);
+    if (!input_object->key(key, event))
+      return error_handler(server_error("Error", request));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
+  send_response(json_success("OK", request));
 }
 
-void session_t::swipe_request_handler(string_request_t const &request,
-                                      url_query_t const &) {
+void session_t::swipe_request_handler(url_query_t const &) {
+  auto &request = m_thisRequest;
   try {
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto x_iter = json_root.find("x");
@@ -442,22 +371,20 @@ void session_t::swipe_request_handler(string_request_t const &request,
     auto const y2 = y2_iter->second.get<json::number_integer_t>();
     auto const event = event_iter->second.get<json::number_integer_t>();
     auto const velocity = velocity_iter->second.get<json::number_integer_t>();
-    std::visit(
-        [x, x2, y, y2, event, velocity, request,
-         self = shared_from_this()](auto &&input_object) {
-          if (input_object.swipe(x, y, x2, y2, velocity, event))
-            return self->send_response(self->json_success("OK", request));
-          self->error_handler(self->server_error("Error", request));
-        },
-        get_input_object(m_rt_arguments));
+
+    auto input_object = get_input_object(m_rt_arguments);
+    if (!input_object->swipe(x, y, x2, y2, velocity, event))
+      return error_handler(server_error("Error", request));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
+  send_response(json_success("OK", request));
 }
 
-void session_t::text_request_handler(string_request_t const &request,
-                                     url_query_t const &) {
+void session_t::text_request_handler(url_query_t const &) {
+  auto &request = m_thisRequest;
+
   try {
     auto const json_root = json::parse(request.body()).get<json::object_t>();
     auto text_iter = json_root.find("text");
@@ -473,43 +400,51 @@ void session_t::text_request_handler(string_request_t const &request,
     for (auto const &text : text_array)
       text_list.push_back(static_cast<int>(text.get<json::number_integer_t>()));
 
-    std::visit(
-        [list = std::move(text_list), event, request,
-         self = shared_from_this()](auto &&input_object) {
-          if (input_object.text(list, event))
-            return self->send_response(self->json_success("OK", request));
-          self->error_handler(self->server_error("Error", request));
-        },
-        get_input_object(m_rt_arguments));
+    auto input_object = get_input_object(m_rt_arguments);
+    if (!input_object->text(text_list, event))
+      return error_handler(server_error("Error", request));
   } catch (std::exception const &e) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
+  send_response(json_success("OK", request));
 }
 
-void session_t::screen_request_handler(string_request_t const &request,
-                                       url_query_t const &optional_query) {
+void session_t::screenshot_request_handler(url_query_t const &optional_query) {
+  auto &request = m_thisRequest;
   auto screen_object = get_screen_object(m_rt_arguments);
   if (!screen_object) {
     return error_handler(
         server_error("unable to create screen object", request));
   }
 
-  auto const id_iter = optional_query.find("id");
+  auto const id_iter = optional_query.find("screen_number");
   if (id_iter == optional_query.cend())
-    return send_response(json_success(screen_object->list_screens(), request));
-
-  // as in the case of /screen?id=xy
-  auto const screen_id = id_iter->second.to_string();
-  if (screen_id.empty())
     return error_handler(bad_request("invalid screen id", request));
+  int screen_id;
+  try {
+    screen_id = std::stoi(id_iter->second);
+  } catch (std::exception const &) {
+    return error_handler(bad_request("invalid screen id", request));
+  }
 
   image_data_t image{};
-  if (!screen_object->grab_frame_buffer(image, std::stoi(screen_id)))
-    return send_response(server_error("unable to get screenshot", request));
+  if (!screen_object->grab_frame_buffer(image, screen_id))
+    return error_handler(server_error("unable to get screenshot", request));
 
   auto const filename = save_image_to_file(image);
   send_file(filename, request);
+}
+
+void session_t::screen_request_handler(url_query_t const &optional_query) {
+  auto screen_object = get_screen_object(m_rt_arguments);
+  auto &request = m_thisRequest;
+
+  if (!screen_object) {
+    return error_handler(
+        server_error("unable to create screen object", request));
+  }
+  return send_response(json_success(screen_object->list_screens(), request));
 }
 
 void session_t::send_file(std::filesystem::path const &file_path,
