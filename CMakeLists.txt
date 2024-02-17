@@ -83,7 +83,8 @@ set(SRC_FILES
       src/server.cpp
       src/network_session.cpp
       src/string_utils.cpp
-      src/endpoint.cpp)
+      src/endpoint.cpp
+      src/uinput_device_guess.cpp)
 
 # Header Files
 set(HEADERS_FILES

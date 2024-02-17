@@ -44,4 +44,12 @@ enum class image_type_e {
   none,
 };
 
+enum class input_device_type_e {
+  keyboard,
+  mouse,
+  trackpad,
+  touchscreen,
+  none,
+};
+
 } // namespace qadx

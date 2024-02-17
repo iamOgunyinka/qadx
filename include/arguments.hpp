@@ -26,23 +26,36 @@
 #pragma once
 
 #include "enumerations.hpp"
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace qadx {
 struct cli_args_t {
   int port = 3465;
-  int kms_format_rgb = 0;
+  bool kms_format_rgb = false;
+  bool guess_devices = false;
+  bool verbose = false;
   std::string input_type = "uinput";
   std::string screen_backend = "kms";
 };
 
+struct evdev_device_mapping_t {
+  int event_number = 0;
+  int relevance = 0;
+  input_device_type_e device_type = input_device_type_e::none;
+};
+
+using uinput_device_list_t = std::vector<evdev_device_mapping_t>;
+
 struct runtime_args_t {
   int port = 0;
-  int kms_format_rgb = 0;
+  bool kms_format_rgb = false;
+  bool verbose = false;
   screen_type_e screen_backend = screen_type_e::none;
   input_type_e input_backend = input_type_e::none;
   std::vector<std::string> kms_backend_cards;
+  std::optional<uinput_device_list_t> devices = std::nullopt;
 };
 
 } // namespace qadx

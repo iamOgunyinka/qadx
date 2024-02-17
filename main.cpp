@@ -24,11 +24,15 @@
  */
 
 #include "server.hpp"
+#include "spdlog/spdlog.h"
 #include "string_utils.hpp"
 #include <CLI/CLI11.hpp>
 #include <thread>
 
 namespace qadx {
+void gather_uinput_device_information(runtime_args_t &);
+void gather_evdev_device_information(runtime_args_t &);
+
 runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
   utils::to_lower_string(cli_args.input_type);
   utils::to_lower_string(cli_args.screen_backend);
@@ -42,10 +46,17 @@ runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
     throw std::runtime_error("invalid input type given");
 
   runtime_args_t args{};
-  if (cli_args.input_type == "uinput")
+  args.verbose = cli_args.verbose;
+
+  if (cli_args.input_type == "uinput") {
     args.input_backend = input_type_e::uinput;
-  else
+    if (cli_args.guess_devices)
+      gather_uinput_device_information(args);
+  } else {
     args.input_backend = input_type_e::evdev;
+    if (cli_args.guess_devices)
+      gather_evdev_device_information(args);
+  }
 
   if (cli_args.screen_backend == "kms") {
     args.screen_backend = screen_type_e::kms;
@@ -81,10 +92,14 @@ int main(int argc, char **argv) {
                         "set DRM device; defaults to 'card0'");
   cli_parser.add_flag("-r,--kms-format-rgb", args.kms_format_rgb,
                       "use RGB pixel format instead of BGR");
+  cli_parser.add_flag("-g,--guess-devices", args.guess_devices,
+                      "guess event IDs from their names(experimental)");
+  cli_parser.add_flag("-V,--verbose", args.verbose, "set verbosity");
   cli_parser.set_version_flag("-v,--version", QAD_VERSION);
   CLI11_PARSE(cli_parser, argc, argv)
 
   auto rt_args = qadx::create_backend_runtime_args(std::move(args));
+
   if (rt_args.screen_backend == qadx::screen_type_e::kms) {
     if (kms_backend_card.empty()) {
       fs::path kms_driver_path = "/dev/dri/";
@@ -95,6 +110,11 @@ int main(int argc, char **argv) {
       }
     } else {
       rt_args.kms_backend_cards.push_back(kms_backend_card);
+    }
+
+    if (rt_args.verbose) {
+      for (auto const &kms_card : rt_args.kms_backend_cards)
+        spdlog::info("Using kms card: {}", kms_card);
     }
   }
 
