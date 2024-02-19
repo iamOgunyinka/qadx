@@ -96,6 +96,7 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
     spdlog::error("Error getting CRTC '{}': {}", screen_id, strerror(errno));
     return false;
   }
+
   drmModeFB *fb = drmModeGetFB(file_descriptor, crtc->buffer_id);
   if (!fb) {
     close(file_descriptor);
@@ -105,14 +106,22 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
     return false;
   }
 
-  auto const fb_size = fb->pitch * fb->height;
   drm_mode_map_dumb dumb_map{};
   dumb_map.handle = fb->handle;
   dumb_map.offset = 0;
 
   drmIoctl(file_descriptor, DRM_IOCTL_MODE_MAP_DUMB, &dumb_map);
+  auto const fb_size = fb->pitch * fb->height;
   auto ptr = mmap(nullptr, fb_size, PROT_READ, MAP_SHARED, file_descriptor,
                   __off_t(dumb_map.offset));
+  if (ptr == MAP_FAILED) {
+    drmModeFreeCrtc(crtc);
+    drmModeFreeFB(fb);
+    close(file_descriptor);
+    spdlog::error("Memory mapping failed");
+    return false;
+  }
+
   mmap_auto_free_t auto_free(ptr, fb_size);
   write_png(ptr, (int)fb->width, int(fb->height), int(fb->pitch), (int)fb->bpp,
             0, screen_buffer);

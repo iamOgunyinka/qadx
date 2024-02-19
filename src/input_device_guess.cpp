@@ -69,7 +69,7 @@ device_type_to_string(input_device_type_e const type) {
   return value;
 }
 
-void sort_devices(uinput_device_list_t &device_list) {
+void sort_devices(input_device_list_t &device_list) {
   std::sort(device_list.begin(), device_list.end(),
             [](auto const &a, auto const &b) {
               return std::tie(a.event_number, a.relevance) <
@@ -77,7 +77,7 @@ void sort_devices(uinput_device_list_t &device_list) {
             });
 }
 
-void show_device_information(uinput_device_list_t const &device_list) {
+void show_device_information(input_device_list_t const &device_list) {
   for (auto const &device_info : device_list) {
     spdlog::info("'{}' event on id '{}'",
                  device_type_to_string(device_info.device_type),

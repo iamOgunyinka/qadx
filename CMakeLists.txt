@@ -84,7 +84,8 @@ set(SRC_FILES
       src/network_session.cpp
       src/string_utils.cpp
       src/endpoint.cpp
-      src/uinput_device_guess.cpp)
+      src/input_device_guess.cpp
+      src/websocket_server.cpp)
 
 # Header Files
 set(HEADERS_FILES
@@ -104,6 +105,7 @@ set(HEADERS_FILES
       include/backends/screen/base_screen.hpp
       include/endpoint.hpp
       include/backends/input/base_input.hpp
+      include/websocket_server.hpp
 )
 
 source_group("Headers" FILES ${HEADERS_FILES})

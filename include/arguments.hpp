@@ -40,22 +40,24 @@ struct cli_args_t {
   std::string screen_backend = "kms";
 };
 
-struct evdev_device_mapping_t {
+struct input_device_mapping_t {
   int event_number = 0;
   int relevance = 0;
   input_device_type_e device_type = input_device_type_e::none;
 };
 
-using uinput_device_list_t = std::vector<evdev_device_mapping_t>;
+using input_device_list_t = std::vector<input_device_mapping_t>;
 
 struct runtime_args_t {
-  int port = 0;
   bool kms_format_rgb = false;
   bool verbose = false;
+  int port = 0;
   screen_type_e screen_backend = screen_type_e::none;
   input_type_e input_backend = input_type_e::none;
   std::vector<std::string> kms_backend_cards;
-  std::optional<uinput_device_list_t> devices = std::nullopt;
+  std::optional<input_device_list_t> devices = std::nullopt;
 };
 
+int event_id_for(input_device_list_t const &device_list,
+                 input_device_type_e type);
 } // namespace qadx

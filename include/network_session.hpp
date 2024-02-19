@@ -27,7 +27,6 @@
 
 #include <boost/beast/core/flat_buffer.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
-#include <boost/beast/http/empty_body.hpp>
 #include <boost/beast/http/file_body.hpp>
 #include <boost/beast/http/parser.hpp>
 #include <boost/beast/http/serializer.hpp>
@@ -71,8 +70,6 @@ using string_response_t = http::response<http::string_body>;
 using string_request_t = http::request<http::string_body>;
 
 class session_t : public std::enable_shared_from_this<session_t> {
-  using string_body_ptr =
-      std::unique_ptr<http::request_parser<http::string_body>>;
   using alloc_t = fields_alloc<char>;
 
 private:
@@ -80,8 +77,6 @@ private:
   runtime_args_t const &m_rt_arguments;
   endpoint_t m_endpoints;
   beast::flat_buffer m_buffer{};
-  std::optional<http::request_parser<http::empty_body>> m_emptyBodyParser =
-      std::nullopt;
   std::optional<http::response<http::file_body, http::basic_fields<alloc_t>>>
       m_fileResponse = std::nullopt;
   alloc_t m_fileAlloc{8'192};
@@ -89,13 +84,13 @@ private:
       http::response_serializer<http::file_body, http::basic_fields<alloc_t>>>
       m_fileSerializer = std::nullopt;
   std::shared_ptr<void> m_cachedResponse = nullptr;
-  string_body_ptr m_clientRequest{nullptr};
+  std::optional<http::request_parser<http::string_body>> m_clientRequest =
+      std::nullopt;
   beast::tcp_stream m_tcpStream;
   string_request_t m_thisRequest{};
 
 private:
   void shutdown_socket();
-  void on_header_read(beast::error_code, std::size_t);
   void http_read_data();
   void on_data_read(beast::error_code ec, size_t);
   void send_response(string_response_t &&response);

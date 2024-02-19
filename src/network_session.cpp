@@ -28,24 +28,27 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/beast/http/read.hpp>
 #include <boost/beast/http/write.hpp>
+#include <boost/beast/websocket/rfc6455.hpp>
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include "backends/screen/ilm.hpp"
 #include "backends/screen/kms.hpp"
 #include "string_utils.hpp"
+#include "websocket_server.hpp"
 
 #define CONTENT_TYPE_JSON "application/json"
 
 namespace qadx {
 using nlohmann::json;
 
-enum constant_e { RequestBodySize = 1'024 * 1'024 * 50 };
+enum constant_e { RequestBodySize = 1'024 * 1'024 };
 
-int event_id_for(uinput_device_list_t const &device_list,
+int event_id_for(input_device_list_t const &device_list,
                  input_device_type_e const type) {
-  auto iter = std::find_if(
+  auto const iter = std::find_if(
       device_list.cbegin(), device_list.cend(),
       [type](auto const &device) { return device.device_type == type; });
   if (iter == device_list.cend())
@@ -189,25 +192,32 @@ session_t::~session_t() { spdlog::info("Session completed..."); }
 
 void session_t::http_read_data() {
   m_buffer.clear();
-  m_emptyBodyParser.emplace();
-  m_emptyBodyParser->body_limit(RequestBodySize);
+  m_clientRequest.emplace();
+  m_clientRequest->body_limit(RequestBodySize);
   beast::get_lowest_layer(m_tcpStream).expires_after(std::chrono::minutes(1));
-  http::async_read_header(m_tcpStream, m_buffer, *m_emptyBodyParser,
-                          ASYNC_CALLBACK(on_header_read));
+  http::async_read(m_tcpStream, m_buffer, *m_clientRequest,
+                   ASYNC_CALLBACK(on_data_read));
 }
 
-void session_t::on_header_read(beast::error_code ec, std::size_t const) {
-  if (ec == http::error::end_of_stream || ec == beast::error::timeout)
-    return shutdown_socket();
-
+void session_t::on_data_read(beast::error_code const ec, std::size_t const) {
   if (ec) {
-    return error_handler(details::server_error(ec.message(), {}), true);
-  } else {
-    m_clientRequest = std::make_unique<http::request_parser<http::string_body>>(
-        std::move(*m_emptyBodyParser));
-    http::async_read(m_tcpStream, m_buffer, *m_clientRequest,
-                     ASYNC_CALLBACK(on_data_read));
+    if (ec == http::error::end_of_stream) // end of connection
+      return shutdown_socket();
+    else if (ec == http::error::body_limit) {
+      return error_handler(server_error(ec.message(), string_request_t{}),
+                           true);
+    }
+    return error_handler(server_error(ec.message(), string_request_t{}), true);
   }
+
+  if (beast::websocket::is_upgrade(m_clientRequest->get())) {
+    std::make_shared<websocket_server_t>(m_ioContext, m_rt_arguments,
+                                         m_tcpStream.release_socket())
+        ->run(m_clientRequest->release());
+    return;
+  }
+
+  return handle_requests(m_clientRequest->get());
 }
 
 void session_t::handle_requests(string_request_t const &request) {
@@ -258,20 +268,6 @@ void session_t::handle_requests(string_request_t const &request) {
   for (auto const &[key, value] : placeholder.placeholders)
     url_query[key] = value;
   rule.route_callback(url_query);
-}
-
-void session_t::on_data_read(beast::error_code const ec, std::size_t const) {
-  if (ec) {
-    if (ec == http::error::end_of_stream) // end of connection
-      return shutdown_socket();
-    else if (ec == http::error::body_limit) {
-      return error_handler(server_error(ec.message(), string_request_t{}),
-                           true);
-    }
-    return error_handler(server_error(ec.message(), string_request_t{}), true);
-  }
-
-  return handle_requests(m_clientRequest->get());
 }
 
 void session_t::send_response(string_response_t &&response) {

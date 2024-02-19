@@ -24,43 +24,28 @@
  */
 
 #pragma once
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/http/message.hpp>
+#include <boost/beast/http/string_body.hpp>
+#include <memory>
+
+#include "arguments.hpp"
+
+namespace net = boost::asio;
+namespace ip = net::ip;
+namespace http = boost::beast::http;
 
 namespace qadx {
-enum class input_type_e : int {
-  evdev,
-  uinput,
-  none,
-};
+using string_request_t = http::request<http::string_body>;
 
-enum class screen_type_e : int {
-  ilm,
-  kms,
-  none,
-};
+class websocket_server_t
+    : public std::enable_shared_from_this<websocket_server_t> {
+  class websocket_server_impl_t;
+  std::shared_ptr<websocket_server_impl_t> m_impl = nullptr;
 
-enum class image_type_e : int {
-  png,
-  bmp,
-  none,
+public:
+  websocket_server_t(net::io_context &m_ioContext, runtime_args_t rt,
+                     ip::tcp::socket &&);
+  void run(string_request_t &&request);
 };
-
-enum class input_device_type_e : int {
-  keyboard,
-  mouse,
-  trackpad,
-  touchscreen,
-  none,
-};
-
-enum class message_type_e : int {
-  swipe,
-  screen_stream,
-  screens,
-  text,
-  key,
-  touch,
-  button,
-  unknown,
-};
-
 } // namespace qadx
