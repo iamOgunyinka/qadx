@@ -25,20 +25,17 @@
 
 #include "backends/screen/kms.hpp"
 #include "backends/input/common.hpp"
+#include "backends/screen/kms_page_flip.hpp"
 #include "drm_mode.h"
-
 #include <spdlog/spdlog.h>
-#include <xf86drm.h>
-#include <xf86drmMode.h>
-
-#include <memory>
 
 namespace qadx {
 
-std::vector<details::kms_screen_crtc_t> kms_screen_t::list_screens_impl() {
-  int file_descriptor = open(m_card.c_str(), O_RDONLY);
+std::vector<details::kms_screen_crtc_t>
+kms_screen_t::list_screens_impl(std::string const &card) {
+  int file_descriptor = open(card.c_str(), O_RDONLY);
   if (file_descriptor < 0) {
-    spdlog::error("Error opening {}: {}", m_card, strerror(errno));
+    spdlog::error("Error opening {}: {}", card, strerror(errno));
     return {};
   }
 
@@ -73,7 +70,7 @@ std::vector<details::kms_screen_crtc_t> kms_screen_t::list_screens_impl() {
 
 std::string kms_screen_t::list_screens() {
   std::string reply{};
-  if (auto const screens = this->list_screens_impl(); !screens.empty()) {
+  if (auto const screens = list_screens_impl(m_card); !screens.empty()) {
     for (auto const &screen_info : screens) {
       reply += fmt::format("CRTC: ID={}, mode_valid={}\n", screen_info.id,
                            screen_info.valid_mode);
@@ -131,19 +128,25 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
   return true;
 }
 
+std::optional<details::kms_screen_crtc_t>
+find_usable_screen(std::string const &card) {
+  auto const screens = kms_screen_t::list_screens_impl(card);
+  auto valid_screen_iter =
+      std::find_if(screens.begin(), screens.end(), [](auto const &screen_info) {
+        return screen_info.valid_mode == 1;
+      });
+  if (valid_screen_iter != screens.end())
+    return *valid_screen_iter;
+  return std::nullopt;
+}
+
 std::string select_suitable_kms_card(string_list_t const &cards, int const) {
   for (auto const &card : cards) {
     int screen_id = 2;
     kms_screen_t kms_screen{};
     kms_screen.m_card += card;
-    {
-      auto const screens = kms_screen.list_screens_impl();
-      auto valid_screen_iter = std::find_if(
-          screens.begin(), screens.end(),
-          [](auto const &screen_info) { return screen_info.valid_mode == 1; });
-      if (valid_screen_iter != screens.end())
-        screen_id = (int)valid_screen_iter->id;
-    }
+    if (auto const sc = find_usable_screen(kms_screen.m_card); sc.has_value())
+      screen_id = static_cast<int>(sc->id);
 
     image_data_t image{};
     if (kms_screen.grab_frame_buffer(image, screen_id))
@@ -170,10 +173,79 @@ create_instance(string_list_t const &backend_cards, int const kms_format_rgb) {
   return std::make_unique<kms_screen_t>(kms_screen);
 }
 
+void page_flip_background_thread(std::vector<std::string> const &backend_cards,
+                                 int const kms_format_rgb) {
+  auto const card_suffix =
+      select_suitable_kms_card(backend_cards, kms_format_rgb);
+
+  if (card_suffix.empty())
+    return;
+
+  auto const card = "/dev/dri/" + card_suffix;
+  int const file_descriptor = open(card.c_str(), O_RDWR | O_CLOEXEC);
+  if (file_descriptor < 0) {
+    spdlog::error("Cannot open '{}' because '{}'", card, strerror(errno));
+    return;
+  }
+
+  // check that we have the capability to create dumb buffers
+  uint64_t has_dumb_buffer_cap = 0;
+  if (drmGetCap(file_descriptor, DRM_CAP_DUMB_BUFFER, &has_dumb_buffer_cap) <
+          0 ||
+      !has_dumb_buffer_cap) {
+    close(file_descriptor);
+    return spdlog::error(
+        "DRM device does not have the capability to create dumb buffers");
+  }
+
+  auto page_flip_data = new page_flip_drm_t();
+  page_flip_data->file_descriptor = file_descriptor;
+  if (!details::create_frame_buffers(file_descriptor, *page_flip_data)) {
+    delete page_flip_data;
+    return;
+  }
+
+  for (auto &buffer_info : page_flip_data->buffers) {
+    auto const ret = drmModeSetCrtc(
+        file_descriptor, page_flip_data->crtc_id, buffer_info.buffer_id, 0, 0,
+        &page_flip_data->connector_id, 1, &page_flip_data->mode);
+    if (ret) { // todo: do resource cleanup
+      delete page_flip_data;
+      return spdlog::error("unable to set crtc mode on buffer");
+    }
+  }
+
+  page_flip_data->event_context.version = 3;
+  page_flip_data->event_context.page_flip_handler = details::page_flip_callback;
+
+  // let's start with the first buffer, then we flip the buffer on each write
+  auto const ret = drmModePageFlip(file_descriptor, page_flip_data->crtc_id,
+                                   page_flip_data->buffers[0].buffer_id,
+                                   DRM_MODE_PAGE_FLIP_EVENT, page_flip_data);
+  if (ret) {
+    delete page_flip_data;
+    return;
+  }
+
+  page_flip_data->file_descriptor = file_descriptor;
+  page_flip_data->buffers[0].has_pending_flip = 1;
+
+  std::thread{[page_flip_data] {
+    std::make_shared<async_kms_page_flit_handler_t>(get_io_context(),
+                                                    page_flip_data)
+        ->run();
+    get_io_context().run();
+  }}.detach();
+}
+
 kms_screen_t *
 kms_screen_t::create_global_instance(string_list_t const &backend_cards,
                                      int const kms_format_rgb) {
   static auto screen = create_instance(backend_cards, kms_format_rgb);
+  static bool background_thread = [=] {
+    page_flip_background_thread(backend_cards, kms_format_rgb);
+    return true;
+  }();
   return screen.get();
 }
 

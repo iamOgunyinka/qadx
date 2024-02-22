@@ -27,6 +27,7 @@
 #include "spdlog/spdlog.h"
 #include "string_utils.hpp"
 #include <CLI/CLI11.hpp>
+#include <boost/asio/signal_set.hpp>
 #include <thread>
 
 namespace qadx {
@@ -129,6 +130,9 @@ int main(int argc, char **argv) {
       std::max(1, (int)std::thread::hardware_concurrency() - 1);
   std::vector<std::thread> v{};
   v.reserve(threads);
+
+  boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
+  signals.async_wait([&io_context](auto, auto) { io_context.stop(); });
 
   for (auto i = threads; i > 0; --i)
     v.emplace_back([&io_context] { io_context.run(); });

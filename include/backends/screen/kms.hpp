@@ -45,7 +45,11 @@ struct kms_screen_t final : public base_screen_t {
 
   std::string list_screens() final;
   bool grab_frame_buffer(image_data_t &screen_buffer, int screen) final;
+
   ~kms_screen_t() override = default;
+
+  static std::vector<details::kms_screen_crtc_t>
+  list_screens_impl(std::string const &card);
 
 private:
   friend std::unique_ptr<kms_screen_t>
@@ -53,7 +57,6 @@ private:
   friend std::string select_suitable_kms_card(string_list_t const &cards,
                                               int use_rgb);
   kms_screen_t() : base_screen_t() {}
-  std::vector<details::kms_screen_crtc_t> list_screens_impl();
   std::string m_card = "/dev/dri/";
 };
 } // namespace qadx

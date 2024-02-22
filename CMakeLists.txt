@@ -85,7 +85,8 @@ set(SRC_FILES
       src/string_utils.cpp
       src/endpoint.cpp
       src/input_device_guess.cpp
-      src/websocket_server.cpp)
+      src/websocket_server.cpp
+      src/backends/screen/kms_page_flip.cpp)
 
 # Header Files
 set(HEADERS_FILES
@@ -106,6 +107,7 @@ set(HEADERS_FILES
       include/endpoint.hpp
       include/backends/input/base_input.hpp
       include/websocket_server.hpp
+      include/backends/screen/kms_page_flip.hpp
 )
 
 source_group("Headers" FILES ${HEADERS_FILES})
