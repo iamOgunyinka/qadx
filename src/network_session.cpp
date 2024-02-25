@@ -28,16 +28,22 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/beast/http/read.hpp>
 #include <boost/beast/http/write.hpp>
-#include <boost/beast/websocket/rfc6455.hpp>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#ifdef QADX_USE_ILM
 #include "backends/screen/ilm.hpp"
+#endif
+
 #include "backends/screen/kms.hpp"
 #include "string_utils.hpp"
+
+#ifdef QADX_USE_WITH_WEBSOCKET
 #include "websocket_server.hpp"
+#include <boost/beast/websocket/rfc6455.hpp>
+#endif
 
 #define CONTENT_TYPE_JSON "application/json"
 
@@ -150,6 +156,22 @@ string_response_t json_success(json const &body, string_request_t const &req) {
   return response;
 }
 
+string_response_t text_success(std::string const &text,
+                               string_request_t const &req) {
+  using http::field;
+  string_response_t response{http::status::ok, req.version()};
+  response.set(http::field::content_type, "text/plain");
+  response.set(field::access_control_allow_origin, "*");
+  response.set(field::access_control_allow_methods, "GET, POST");
+  response.set(field::access_control_allow_headers,
+               "Content-Type, Authorization");
+
+  response.keep_alive(req.keep_alive());
+  response.body() = text;
+  response.prepare_payload();
+  return response;
+}
+
 string_response_t success(char const *message, string_request_t const &req) {
   json::object_t result_obj;
   result_obj["message"] = message;
@@ -209,19 +231,21 @@ void session_t::on_data_read(beast::error_code const ec, std::size_t const) {
     }
     return error_handler(server_error(ec.message(), string_request_t{}), true);
   }
-
+#ifdef QADX_USE_WITH_WEBSOCKET
   if (beast::websocket::is_upgrade(m_clientRequest->get())) {
     std::make_shared<websocket_server_t>(m_ioContext, m_rt_arguments,
                                          m_tcpStream.release_socket())
         ->run(m_clientRequest->release());
     return;
   }
-
+#endif
   return handle_requests(m_clientRequest->get());
 }
 
 void session_t::handle_requests(string_request_t const &request) {
-  std::string const request_target{utils::decode_url(request.target())};
+  std::string request_target{utils::decode_url(request.target())};
+  while (boost::ends_with(request_target, "/"))
+    request_target.pop_back();
   m_thisRequest = request;
 
   if (request_target.empty())
@@ -336,9 +360,11 @@ std::shared_ptr<session_t> session_t::add_endpoint_interfaces() {
 base_screen_t *get_screen_object(runtime_args_t const &args) {
   base_screen_t *screen = nullptr;
   try {
-    if (args.screen_backend == screen_type_e::ilm) {
+#ifdef QADX_USE_ILM
+    if (args.screen_backend == screen_type_e::ilm)
       screen = ilm_screen_t::create_global_instance();
-    } else {
+#endif
+    if (args.screen_backend == screen_type_e::kms) {
       screen = kms_screen_t::create_global_instance(args.kms_backend_cards,
                                                     args.kms_format_rgb);
     }
@@ -379,7 +405,7 @@ void session_t::move_mouse_request_handler(url_query_t const &) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
-  send_response(json_success("OK", request));
+  send_response(text_success("OK", request));
 }
 
 void session_t::button_request_handler(url_query_t const &) {
@@ -403,7 +429,7 @@ void session_t::button_request_handler(url_query_t const &) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
-  send_response(json_success("OK", request));
+  send_response(text_success("OK", request));
 }
 
 void session_t::touch_request_handler(url_query_t const &) {
@@ -431,7 +457,7 @@ void session_t::touch_request_handler(url_query_t const &) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
-  send_response(json_success("OK", request));
+  send_response(text_success("OK", request));
 }
 
 void session_t::key_request_handler(url_query_t const &) {
@@ -453,7 +479,7 @@ void session_t::key_request_handler(url_query_t const &) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
-  send_response(json_success("OK", request));
+  send_response(text_success("OK", request));
 }
 
 void session_t::swipe_request_handler(url_query_t const &) {
@@ -486,7 +512,7 @@ void session_t::swipe_request_handler(url_query_t const &) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
-  send_response(json_success("OK", request));
+  send_response(text_success("OK", request));
 }
 
 void session_t::text_request_handler(url_query_t const &) {
@@ -515,15 +541,16 @@ void session_t::text_request_handler(url_query_t const &) {
     spdlog::error(e.what());
     return error_handler(bad_request(e.what(), request));
   }
-  send_response(json_success("OK", request));
+  send_response(text_success("OK", request));
 }
 
 void session_t::screenshot_request_handler(url_query_t const &optional_query) {
+  spdlog::info("{} called", __func__);
   auto &request = m_thisRequest;
   auto screen_object = get_screen_object(m_rt_arguments);
   if (!screen_object) {
     return error_handler(
-        server_error("unable to create screen object", request));
+        server_error("unable to create screen object.", request));
   }
 
   auto const id_iter = optional_query.find("screen_number");
@@ -548,11 +575,13 @@ void session_t::screen_request_handler(url_query_t const &optional_query) {
   auto screen_object = get_screen_object(m_rt_arguments);
   auto &request = m_thisRequest;
 
+  std::cout << request << std::endl;
+
   if (!screen_object) {
     return error_handler(
         server_error("unable to create screen object", request));
   }
-  return send_response(json_success(screen_object->list_screens(), request));
+  return send_response(text_success(screen_object->list_screens(), request));
 }
 
 void session_t::send_file(std::filesystem::path const &file_path,

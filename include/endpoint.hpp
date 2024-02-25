@@ -80,10 +80,12 @@ class endpoint_t {
 
 public:
   template <typename Verb, typename... Verbs>
-  void add_endpoint(std::string const &route, callback_t &&cb, Verb &&verb,
+  void add_endpoint(std::string route, callback_t &&cb, Verb &&verb,
                     Verbs &&...verbs) {
     if (route.empty() || route[0] != '/')
       throw std::runtime_error{"A valid route starts with a /"};
+    while (route.back() == '/')
+      route.pop_back();
     m_endpoints.emplace(route, rule_t{std::move(cb), std::forward<Verb>(verb),
                                       std::forward<Verbs>(verbs)...});
   }

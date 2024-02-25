@@ -19,11 +19,20 @@ else()
 endif()
 
 find_package(Wayland REQUIRED)
+set(ILM_USABLE false)
+
 if(NOT WAYLAND_FOUND)
-    message(FATAL_ERROR "YOu need to have Wayland installed")
+    message(FATAL_ERROR "You need to have Wayland installed")
 else()
     include_directories(${WAYLAND_INCLUDE_DIRS})
     link_libraries(${WAYLAND_LIBRARIES})
+
+    if (EXISTS ${WAYLAND_DOCKER_PATH})
+        message("${WAYLAND_DOCKER_PATH} does exist")
+        include_directories(${WAYLAND_DOCKER_PATH})
+        add_definitions(-DQADX_USE_ILM)
+        set(ILM_USABLE true)
+    endif ()
 endif ()
 
 # Find libdrm
@@ -41,17 +50,11 @@ include_directories(${PROJECT_DIR}/ext)
 include_directories(${PROJECT_DIR}/ext/spdlog/include)
 include_directories(${PROJECT_DIR}/include/)
 
-if (EXISTS ${WAYLAND_DOCKER_PATH})
-    message("${WAYLAND_DOCKER_PATH} does exist")
-    include_directories(${WAYLAND_DOCKER_PATH})
-else ()
-    message(FATAL_ERROR "${WAYLAND_DOCKER_PATH} does not exist")
-endif ()
-
 link_directories(/usr/lib)
 link_directories(/usr/local/lib)
-link_libraries(pthread png stdc++fs wayland-client ilmControl)
+link_libraries(pthread png stdc++fs)
 
+option(ENABLE_WEBSOCKET    "Compile the library with Websocket support" off)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${OUTPUT_DEBUG}")
@@ -76,7 +79,6 @@ message("${PROJECT_NAME}: CURR BIN DIR: ${CMAKE_CURRENT_BINARY_DIR}")
 set(SRC_FILES
       main.cpp
       src/backends/input/common.cpp
-      src/backends/screen/ilm.cpp
       src/backends/screen/kms.cpp
       src/images/bmp.cpp
       src/images/png.cpp
@@ -84,17 +86,14 @@ set(SRC_FILES
       src/network_session.cpp
       src/string_utils.cpp
       src/endpoint.cpp
-      src/input_device_guess.cpp
-      src/websocket_server.cpp
-      src/backends/screen/kms_page_flip.cpp)
+      src/input_device_guess.cpp)
 
 # Header Files
-set(HEADERS_FILES
+set(HEADER_FILES
       include/image.hpp
       include/backends/input/evdev.hpp
       include/backends/input/common.hpp
       include/backends/input/uinput.hpp
-      include/backends/screen/ilm.hpp
       include/backends/screen/kms.hpp
       include/server.hpp
       include/network_session.hpp
@@ -106,15 +105,33 @@ set(HEADERS_FILES
       include/backends/screen/base_screen.hpp
       include/endpoint.hpp
       include/backends/input/base_input.hpp
-      include/websocket_server.hpp
-      include/backends/screen/kms_page_flip.hpp
 )
 
-source_group("Headers" FILES ${HEADERS_FILES})
+if (${ILM_USABLE})
+    list(APPEND HEADER_FILES
+       include/backends/screen/ilm.hpp)
+    list(APPEND SRC_FILES
+       src/backends/screen/ilm.cpp)
+    link_libraries(wayland-client ilmControl)
+endif ()
+
+if (ENABLE_WEBSOCKET)
+    message("Websocket enabled")
+    add_definitions(-DQADX_USE_WITH_WEBSOCKET)
+    list(APPEND HEADER_FILES
+      include/websocket_server.hpp
+      include/backends/screen/kms_page_flip.hpp
+    )
+    list(APPEND SRC_FILES
+      src/websocket_server.cpp
+      src/backends/screen/kms_page_flip.cpp)
+endif ()
+
+source_group("Headers" FILES ${HEADER_FILES})
 source_group("Sources" FILES ${SRC_FILES})
 
 # Add executable to build.
-add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEADERS_FILES})
+add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEADER_FILES})
 
 if(NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -std=c++17 -O3 -Werror")

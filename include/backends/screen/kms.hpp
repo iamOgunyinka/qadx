@@ -59,4 +59,20 @@ private:
   kms_screen_t() : base_screen_t() {}
   std::string m_card = "/dev/dri/";
 };
+
+/*
+class dumb_map_auto_t {
+  int const m_fileDescriptor;
+  bool m_constructed = false;
+  drm_mode_map_dumb m_mapDumb;
+
+  void reset();
+
+public:
+  explicit dumb_map_auto_t(int fd);
+  explicit operator bool() const { return m_constructed; }
+  auto &map() { return m_mapDumb; }
+  ~dumb_map_auto_t() { reset(); }
+};
+*/
 } // namespace qadx

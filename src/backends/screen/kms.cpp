@@ -25,8 +25,14 @@
 
 #include "backends/screen/kms.hpp"
 #include "backends/input/common.hpp"
+#ifdef QADX_USE_WITH_WEBSOCKET
 #include "backends/screen/kms_page_flip.hpp"
-#include "drm_mode.h"
+#else
+#include <optional>
+#include <xf86drm.h>
+#include <xf86drmMode.h>
+#endif
+#include <drm_mode.h>
 #include <spdlog/spdlog.h>
 
 namespace qadx {
@@ -81,7 +87,7 @@ std::string kms_screen_t::list_screens() {
 
 bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
                                      int const screen_id) {
-  int file_descriptor = open(m_card.c_str(), O_RDWR | O_CLOEXEC);
+  int const file_descriptor = open(m_card.c_str(), O_RDWR | O_CLOEXEC);
   if (file_descriptor < 0) {
     spdlog::error("Error opening {}: {}", m_card, strerror(errno));
     return false;
@@ -94,7 +100,7 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
     return false;
   }
 
-  drmModeFB *fb = drmModeGetFB(file_descriptor, crtc->buffer_id);
+  auto fb = drmModeGetFB(file_descriptor, crtc->buffer_id);
   if (!fb) {
     close(file_descriptor);
     drmModeFreeCrtc(crtc);
@@ -173,6 +179,7 @@ create_instance(string_list_t const &backend_cards, int const kms_format_rgb) {
   return std::make_unique<kms_screen_t>(kms_screen);
 }
 
+#ifdef QADX_USE_WITH_WEBSOCKET
 void page_flip_background_thread(std::vector<std::string> const &backend_cards,
                                  int const kms_format_rgb) {
   auto const card_suffix =
@@ -205,30 +212,50 @@ void page_flip_background_thread(std::vector<std::string> const &backend_cards,
     return;
   }
 
-  for (auto &buffer_info : page_flip_data->buffers) {
-    auto const ret = drmModeSetCrtc(
-        file_descriptor, page_flip_data->crtc_id, buffer_info.buffer_id, 0, 0,
-        &page_flip_data->connector_id, 1, &page_flip_data->mode);
-    if (ret) { // todo: do resource cleanup
-      delete page_flip_data;
-      return spdlog::error("unable to set crtc mode on buffer");
-    }
+  auto &buffer = page_flip_data->buffers[0];
+  spdlog::info("FD: {}, CRTC-ID: {}, BID: {}, CID: {}", file_descriptor,
+               page_flip_data->crtc_id, buffer.buffer_id,
+               page_flip_data->connector_id);
+  spdlog::info("ID: {}, P: {}, H: {}, S: {}, HP: {}", buffer.buffer_id,
+               buffer.pitch, buffer.buffer_handle, buffer.buffer_size,
+               buffer.has_pending_flip);
+
+  auto ret = drmSetMaster(file_descriptor);
+  if (ret) {
+    delete page_flip_data;
+    return spdlog::error("unable to switch to master mode, {}",
+                         strerror(errno));
+  }
+
+  ret = drmModeSetCrtc(file_descriptor, page_flip_data->crtc_id,
+                       buffer.buffer_id, 0, 0, &page_flip_data->connector_id, 1,
+                       &page_flip_data->mode);
+  if (ret) { // todo: do proper resource cleanup
+    delete page_flip_data;
+    return spdlog::error("unable to set crtc mode on buffer, {}",
+                         strerror(errno));
+  }
+
+  ret = drmDropMaster(file_descriptor);
+  if (ret) {
+    delete page_flip_data;
+    return spdlog::error("unable to drop from master mode {}", strerror(errno));
   }
 
   page_flip_data->event_context.version = 3;
   page_flip_data->event_context.page_flip_handler = details::page_flip_callback;
 
   // let's start with the first buffer, then we flip the buffer on each write
-  auto const ret = drmModePageFlip(file_descriptor, page_flip_data->crtc_id,
-                                   page_flip_data->buffers[0].buffer_id,
-                                   DRM_MODE_PAGE_FLIP_EVENT, page_flip_data);
+  ret = drmModePageFlip(file_descriptor, page_flip_data->crtc_id,
+                        buffer.buffer_id, DRM_MODE_PAGE_FLIP_EVENT,
+                        page_flip_data);
   if (ret) {
     delete page_flip_data;
     return;
   }
 
   page_flip_data->file_descriptor = file_descriptor;
-  page_flip_data->buffers[0].has_pending_flip = 1;
+  buffer.has_pending_flip = 1;
 
   std::thread{[page_flip_data] {
     std::make_shared<async_kms_page_flit_handler_t>(get_io_context(),
@@ -237,16 +264,53 @@ void page_flip_background_thread(std::vector<std::string> const &backend_cards,
     get_io_context().run();
   }}.detach();
 }
+#endif
 
 kms_screen_t *
 kms_screen_t::create_global_instance(string_list_t const &backend_cards,
                                      int const kms_format_rgb) {
   static auto screen = create_instance(backend_cards, kms_format_rgb);
+#ifdef QADX_USE_WITH_WEBSOCKET
   static bool background_thread = [=] {
     page_flip_background_thread(backend_cards, kms_format_rgb);
     return true;
   }();
+#endif
   return screen.get();
 }
 
+/*
+dumb_map_auto_t::dumb_map_auto_t(int const fd)
+    : m_fileDescriptor(fd), m_mapDumb{} {
+  drm_mode_create_dumb dumb_buffer{};
+  memset(&dumb_buffer, 0, sizeof dumb_buffer);
+  dumb_buffer.bpp = 32; // bits per pixel
+  dumb_buffer.width = ???;
+  dumb_buffer.height = ???;
+  auto ret =
+      drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_CREATE_DUMB, &dumb_buffer);
+  if (ret < 0) {
+    spdlog::error("Unable to create a dumb buffer");
+    return;
+  }
+
+  memset(&m_mapDumb, 0, sizeof m_mapDumb);
+  m_mapDumb.handle = dumb_buffer.handle;
+  ret = drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_MAP_DUMB, &map_dumb);
+  if (ret) {
+    reset();
+    spdlog::error("unable to map frame buffer");
+    return;
+  }
+  m_constructed = true;
+}
+
+void dumb_map_auto_t::reset() {
+  if (!m_constructed)
+    return;
+  drm_mode_destroy_dumb destroy_dumb{};
+  destroy_dumb.handle = m_mapDumb.handle;
+  drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
+}
+ */
 } // namespace qadx

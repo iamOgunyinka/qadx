@@ -58,19 +58,16 @@ namespace details {
       auto encoder = drmModeGetEncoder(file_descriptor, connector->encoder_id);
       if (encoder) {
         if (encoder->crtc_id) {
-          auto c = drmModeGetCrtc(file_descriptor, encoder->crtc_id);
-          if (c && c->mode_valid) {
-            data.crtc_id = encoder->crtc_id;
-            data.connector_id = connector->connector_id;
+          spdlog::info("Encoder::CRTC::ID: {}", encoder->crtc_id);
+          spdlog::info("Mode valid for ID: {}/{}", encoder->crtc_id,
+                       connector->connector_id);
+          data.crtc_id = encoder->crtc_id;
+          data.connector_id = connector->connector_id;
 
-            drmModeFreeCrtc(c);
-            drmModeFreeEncoder(encoder);
-            drmModeFreeConnector(connector);
-            drmModeFreeResources(resources);
-            return true;
-          }
-          if (c)
-            drmModeFreeCrtc(c);
+          drmModeFreeEncoder(encoder);
+          drmModeFreeConnector(connector);
+          drmModeFreeResources(resources);
+          return true;
         }
 
         drmModeFreeEncoder(encoder);
@@ -85,12 +82,14 @@ namespace details {
         // checks that this encoder with this CRT controller
         if (!(encoder->possible_crtcs & (1 << y)))
           continue;
+
         auto c = drmModeGetCrtc(file_descriptor, resources->crtcs[y]);
         if (c && c->mode_valid) {
           data.crtc_id = encoder->crtc_id;
           data.connector_id = connector->connector_id;
 
           drmModeFreeEncoder(encoder);
+          drmModeFreeCrtc(c);
           drmModeFreeConnector(connector);
           drmModeFreeResources(resources);
           return true;
@@ -103,6 +102,7 @@ namespace details {
     drmModeFreeConnector(connector);
   }
   drmModeFreeResources(resources);
+  spdlog::error("Nothing found");
   return false;
 }
 
@@ -111,10 +111,12 @@ namespace details {
   if (!associate_connector_with_crtc(file_descriptor, page_flip_data))
     return false;
 
-  for (auto &frame : page_flip_data.buffers) {
+  for (auto &buffer_cache : page_flip_data.buffers) {
     drm_mode_create_dumb dumb_buffer{};
     memset(&dumb_buffer, 0, sizeof dumb_buffer);
     dumb_buffer.bpp = 32; // bits per pixel
+    dumb_buffer.width = page_flip_data.width;
+    dumb_buffer.height = page_flip_data.height;
 
     auto ret =
         drmIoctl(file_descriptor, DRM_IOCTL_MODE_CREATE_DUMB, &dumb_buffer);
@@ -123,20 +125,21 @@ namespace details {
       return false;
     }
 
-    frame.pitch = dumb_buffer.pitch;
-    frame.buffer_size = dumb_buffer.size;
-    frame.buffer_handle = dumb_buffer.handle;
-    frame.buffer_id = 0;
+    buffer_cache.pitch = dumb_buffer.pitch;
+    buffer_cache.buffer_size = dumb_buffer.size;
+    buffer_cache.buffer_handle = dumb_buffer.handle;
+    buffer_cache.buffer_id = 0;
 
     auto const depth = 24;
     drm_mode_destroy_dumb destroy_dumb{};
 
     ret = drmModeAddFB(file_descriptor, page_flip_data.width,
                        page_flip_data.height, depth, dumb_buffer.bpp,
-                       frame.pitch, frame.buffer_handle, &frame.buffer_id);
+                       buffer_cache.pitch, buffer_cache.buffer_handle,
+                       &buffer_cache.buffer_id);
 
     if (ret) {
-      destroy_dumb.handle = frame.buffer_handle;
+      destroy_dumb.handle = buffer_cache.buffer_handle;
       drmIoctl(file_descriptor, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
       spdlog::error("unable to add frame buffer");
       return false;
@@ -144,29 +147,29 @@ namespace details {
 
     drm_mode_map_dumb map_dumb{};
     memset(&map_dumb, 0, sizeof map_dumb);
-    map_dumb.handle = frame.buffer_handle;
+    map_dumb.handle = buffer_cache.buffer_handle;
     ret = drmIoctl(file_descriptor, DRM_IOCTL_MODE_MAP_DUMB, &map_dumb);
     if (ret) {
-      drmModeRmFB(file_descriptor, frame.buffer_id);
-      destroy_dumb.handle = frame.buffer_handle;
+      drmModeRmFB(file_descriptor, buffer_cache.buffer_id);
+      destroy_dumb.handle = buffer_cache.buffer_handle;
       drmIoctl(file_descriptor, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
       spdlog::error("unable to map frame buffer");
       return false;
     }
 
-    frame.mapped_memory =
-        mmap(nullptr, frame.buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED,
-             file_descriptor, __off_t(map_dumb.offset));
-    if (frame.mapped_memory == MAP_FAILED) {
-      drmModeRmFB(file_descriptor, frame.buffer_id);
-      destroy_dumb.handle = frame.buffer_handle;
+    buffer_cache.mapped_memory =
+        mmap(nullptr, buffer_cache.buffer_size, PROT_READ | PROT_WRITE,
+             MAP_SHARED, file_descriptor, __off_t(map_dumb.offset));
+    if (buffer_cache.mapped_memory == MAP_FAILED) {
+      drmModeRmFB(file_descriptor, buffer_cache.buffer_id);
+      destroy_dumb.handle = buffer_cache.buffer_handle;
       drmIoctl(file_descriptor, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
-      frame.mapped_memory = nullptr;
+      buffer_cache.mapped_memory = nullptr;
       spdlog::error("Unable to map memory using mmap");
       return false;
     }
 
-    memset(frame.mapped_memory, 0, frame.buffer_size);
+    memset(buffer_cache.mapped_memory, 0, buffer_cache.buffer_size);
   }
   return true;
 }

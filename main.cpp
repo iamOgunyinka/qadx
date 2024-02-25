@@ -24,10 +24,9 @@
  */
 
 #include "server.hpp"
-#include "spdlog/spdlog.h"
 #include "string_utils.hpp"
 #include <CLI/CLI11.hpp>
-#include <boost/asio/signal_set.hpp>
+#include <spdlog/spdlog.h>
 #include <thread>
 
 namespace qadx {
@@ -62,9 +61,12 @@ runtime_args_t create_backend_runtime_args(cli_args_t &&cli_args) {
   if (cli_args.screen_backend == "kms") {
     args.screen_backend = screen_type_e::kms;
     args.kms_format_rgb = cli_args.kms_format_rgb;
-  } else {
+  }
+#ifdef QADX_USE_ILM
+  else {
     args.screen_backend = screen_type_e::ilm;
   }
+#endif
   args.port = cli_args.port;
   return args;
 }
@@ -94,7 +96,7 @@ int main(int argc, char **argv) {
   cli_parser.add_flag("-r,--kms-format-rgb", args.kms_format_rgb,
                       "use RGB pixel format instead of BGR");
   cli_parser.add_flag("-g,--guess-devices", args.guess_devices,
-                      "guess event IDs from their names(experimental)");
+                      "guess input event IDs from their names(experimental)");
   cli_parser.add_flag("-V,--verbose", args.verbose, "set verbosity");
   cli_parser.set_version_flag("-v,--version", QAD_VERSION);
   CLI11_PARSE(cli_parser, argc, argv)
@@ -130,9 +132,6 @@ int main(int argc, char **argv) {
       std::max(1, (int)std::thread::hardware_concurrency() - 1);
   std::vector<std::thread> v{};
   v.reserve(threads);
-
-  boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-  signals.async_wait([&io_context](auto, auto) { io_context.stop(); });
 
   for (auto i = threads; i > 0; --i)
     v.emplace_back([&io_context] { io_context.run(); });

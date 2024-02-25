@@ -33,7 +33,9 @@ enum class input_type_e : int {
 };
 
 enum class screen_type_e : int {
+#ifdef QADX_USE_ILM
   ilm,
+#endif
   kms,
   none,
 };
