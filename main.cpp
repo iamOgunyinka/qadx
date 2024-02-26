@@ -29,7 +29,15 @@
 #include <spdlog/spdlog.h>
 #include <thread>
 
+#ifdef QADX_ENABLE_STATIC_SCREEN_CALL
+#include "backends/screen/base_screen.hpp"
+#endif
+
 namespace qadx {
+#ifdef QADX_ENABLE_STATIC_SCREEN_CALL
+base_screen_t *get_screen_object(runtime_args_t const &args);
+#endif
+
 void gather_uinput_device_information(runtime_args_t &);
 void gather_evdev_device_information(runtime_args_t &);
 
@@ -122,8 +130,7 @@ int main(int argc, char **argv) {
   }
 
   auto &io_context = qadx::get_io_context();
-  auto server_instance =
-      std::make_shared<qadx::server_t>(io_context, std::move(rt_args));
+  auto server_instance = std::make_shared<qadx::server_t>(io_context, rt_args);
   if (!(*server_instance))
     return EXIT_FAILURE;
   server_instance->run();
@@ -135,6 +142,11 @@ int main(int argc, char **argv) {
 
   for (auto i = threads; i > 0; --i)
     v.emplace_back([&io_context] { io_context.run(); });
+
+#ifdef QADX_ENABLE_STATIC_SCREEN_CALL
+  if (auto screen = get_screen_object(rt_args); screen != nullptr)
+    spdlog::info("Screens: {}", screen->list_screens());
+#endif
   io_context.run();
   return EXIT_SUCCESS;
 }

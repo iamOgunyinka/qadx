@@ -31,9 +31,9 @@
 #include <spdlog/spdlog.h>
 
 namespace qadx {
-server_t::server_t(net::io_context &context, runtime_args_t &&args_)
+server_t::server_t(net::io_context &context, runtime_args_t args)
     : m_ioContext(context), m_acceptor(net::make_strand(m_ioContext)),
-      m_args(std::move(args_)) {
+      m_args(std::move(args)) {
   beast::error_code ec{}; // used when we don't need to throw all around
   auto const ip_address = "0.0.0.0";
 

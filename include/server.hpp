@@ -45,7 +45,7 @@ class server_t : public std::enable_shared_from_this<server_t> {
   bool m_isOpen = false;
 
 public:
-  server_t(net::io_context &context, runtime_args_t &&args);
+  server_t(net::io_context &context, runtime_args_t args);
   explicit operator bool() const { return m_isOpen; }
   bool run();
 

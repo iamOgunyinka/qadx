@@ -26,6 +26,7 @@
 #pragma once
 
 #include "base_screen.hpp"
+#include <drm_mode.h>
 #include <memory>
 
 namespace qadx {
@@ -60,19 +61,21 @@ private:
   std::string m_card = "/dev/dri/";
 };
 
-/*
 class dumb_map_auto_t {
   int const m_fileDescriptor;
+  uint32_t m_bufferID = 0;
+  uint32_t m_mapSize = 0;
+  void *m_ptr = nullptr;
   bool m_constructed = false;
   drm_mode_map_dumb m_mapDumb;
-
-  void reset();
+  void reset() const;
 
 public:
-  explicit dumb_map_auto_t(int fd);
+  explicit dumb_map_auto_t(int fd, uint32_t w, uint32_t h);
   explicit operator bool() const { return m_constructed; }
-  auto &map() { return m_mapDumb; }
+  auto &ptr() { return m_ptr; }
+  auto &dumb_map() { return m_mapDumb; }
+  [[nodiscard]] auto buffer_id() const { return m_bufferID; }
   ~dumb_map_auto_t() { reset(); }
 };
-*/
 } // namespace qadx

@@ -55,6 +55,7 @@ link_directories(/usr/local/lib)
 link_libraries(pthread png stdc++fs)
 
 option(ENABLE_WEBSOCKET    "Compile the library with Websocket support" off)
+option(ENABLE_STATIC_SCREEN_CALL  "Allow calls to screens' statics during test " off)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${OUTPUT_DEBUG}")
@@ -125,6 +126,10 @@ if (ENABLE_WEBSOCKET)
     list(APPEND SRC_FILES
       src/websocket_server.cpp
       src/backends/screen/kms_page_flip.cpp)
+endif ()
+
+if (ENABLE_STATIC_SCREEN_CALL)
+    add_definitions(-DQADX_ENABLE_STATIC_SCREEN_CALL)
 endif ()
 
 source_group("Headers" FILES ${HEADER_FILES})

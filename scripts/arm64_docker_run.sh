@@ -2,12 +2,13 @@
 
 container_id="$(docker container ls --filter 'ancestor=qadx-arm64-image' --format '{{.Names}}' | head -n 1)"
 
+mkdir -p ./arm64-build
 if [ -n "$container_id" ]; then
   docker container attach "$container_id"
 else
   docker buildx build --platform linux/arm64/v8 -t qadx-arm64-image -f "docker/Dockerfile" .
   docker run -it --privileged --device=/dev/kvm --network host \
-    -v "$(pwd):/src/" --workdir "/src/" --restart=unless-stopped \
+    -v "$(pwd):/src/" --workdir "/src/arm64-build/" --restart=unless-stopped \
     "qadx-arm64-image" bash
 fi
 

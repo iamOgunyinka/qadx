@@ -100,34 +100,16 @@ bool kms_screen_t::grab_frame_buffer(image_data_t &screen_buffer,
     return false;
   }
 
-  auto fb = drmModeGetFB(file_descriptor, crtc->buffer_id);
-  if (!fb) {
-    close(file_descriptor);
+  dumb_map_auto_t buffer(file_descriptor, crtc->width, crtc->height);
+  if (!buffer) {
     drmModeFreeCrtc(crtc);
-    spdlog::error("Error getting frame buffer '{}': {}", crtc->buffer_id,
-                  strerror(errno));
+    close(file_descriptor);
     return false;
   }
 
-  drm_mode_map_dumb dumb_map{};
-  dumb_map.handle = fb->handle;
-  dumb_map.offset = 0;
-
-  drmIoctl(file_descriptor, DRM_IOCTL_MODE_MAP_DUMB, &dumb_map);
-  auto const fb_size = fb->pitch * fb->height;
-  auto ptr = mmap(nullptr, fb_size, PROT_READ, MAP_SHARED, file_descriptor,
-                  __off_t(dumb_map.offset));
-  if (ptr == MAP_FAILED) {
-    drmModeFreeCrtc(crtc);
-    drmModeFreeFB(fb);
-    close(file_descriptor);
-    spdlog::error("Memory mapping failed");
-    return false;
-  }
-
-  mmap_auto_free_t auto_free(ptr, fb_size);
-  write_png(ptr, (int)fb->width, int(fb->height), int(fb->pitch), (int)fb->bpp,
-            0, screen_buffer);
+  auto fb = drmModeGetFB(file_descriptor, buffer.buffer_id());
+  write_png(buffer.ptr(), (int)fb->width, int(fb->height), int(fb->pitch),
+            (int)fb->bpp, 0, screen_buffer);
   drmModeFreeFB(fb);
   drmModeFreeCrtc(crtc);
   close(file_descriptor);
@@ -279,38 +261,71 @@ kms_screen_t::create_global_instance(string_list_t const &backend_cards,
   return screen.get();
 }
 
-/*
-dumb_map_auto_t::dumb_map_auto_t(int const fd)
+dumb_map_auto_t::dumb_map_auto_t(int const fd, uint32_t const width,
+                                 uint32_t const height)
     : m_fileDescriptor(fd), m_mapDumb{} {
+
   drm_mode_create_dumb dumb_buffer{};
   memset(&dumb_buffer, 0, sizeof dumb_buffer);
   dumb_buffer.bpp = 32; // bits per pixel
-  dumb_buffer.width = ???;
-  dumb_buffer.height = ???;
+  dumb_buffer.width = width;
+  dumb_buffer.height = height;
   auto ret =
       drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_CREATE_DUMB, &dumb_buffer);
   if (ret < 0) {
-    spdlog::error("Unable to create a dumb buffer");
+    spdlog::error("Unable to create a dumb buffer: {}", strerror(errno));
+    return;
+  }
+
+  ret = drmModeAddFB(fd, width, height, 24, dumb_buffer.bpp, dumb_buffer.pitch,
+                     dumb_buffer.handle, &m_bufferID);
+  if (ret) {
+    m_bufferID = 0;
+    spdlog::error("unable to add frame buffer: {}", strerror(errno));
+    reset();
     return;
   }
 
   memset(&m_mapDumb, 0, sizeof m_mapDumb);
   m_mapDumb.handle = dumb_buffer.handle;
-  ret = drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_MAP_DUMB, &map_dumb);
+
+  ret = drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_MAP_DUMB, &m_mapDumb);
   if (ret) {
     reset();
     spdlog::error("unable to map frame buffer");
     return;
   }
+
+  m_ptr = mmap(nullptr, dumb_buffer.size, PROT_READ | PROT_WRITE, MAP_SHARED,
+               m_fileDescriptor, __off_t(m_mapDumb.offset));
+  if (m_ptr == MAP_FAILED) {
+    spdlog::error("Unable to map memory using mmap, {}", strerror(errno));
+    m_ptr = nullptr;
+    reset();
+    return;
+  }
+
+  if (uint32_t lesse_id = 0;
+      drmModeCreateLease(m_fileDescriptor, nullptr, 0, 0, &lesse_id)) {
+    spdlog::error("Create Lease mode: {}", strerror(errno));
+  } else {
+    spdlog::info("Lesse ID: {}", lesse_id);
+  }
+  memset(m_ptr, 0, dumb_buffer.size);
+  m_mapSize = dumb_buffer.size;
   m_constructed = true;
 }
 
-void dumb_map_auto_t::reset() {
+void dumb_map_auto_t::reset() const {
   if (!m_constructed)
     return;
+
+  if (m_bufferID > 0)
+    drmModeRmFB(m_fileDescriptor, m_bufferID);
+  if (m_ptr)
+    munmap(m_ptr, m_mapSize);
   drm_mode_destroy_dumb destroy_dumb{};
   destroy_dumb.handle = m_mapDumb.handle;
   drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
 }
- */
 } // namespace qadx
