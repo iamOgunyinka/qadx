@@ -27,10 +27,10 @@
 
 #include <boost/beast/core/flat_buffer.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
-#include <boost/beast/http/file_body.hpp>
 #include <boost/beast/http/parser.hpp>
 #include <boost/beast/http/serializer.hpp>
 #include <boost/beast/http/string_body.hpp>
+#include <boost/beast/http/vector_body.hpp>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -38,7 +38,7 @@
 
 #include "arguments.hpp"
 #include "endpoint.hpp"
-#include "field_allocs.hpp"
+#include "image.hpp"
 #include <backends/input.hpp>
 
 #define ROUTE_CALLBACK(callback)                                               \
@@ -70,19 +70,14 @@ using string_response_t = http::response<http::string_body>;
 using string_request_t = http::request<http::string_body>;
 
 class session_t : public std::enable_shared_from_this<session_t> {
-  using alloc_t = fields_alloc<char>;
+  using vector_body_t = http::vector_body<unsigned char>;
 
 private:
   net::io_context &m_ioContext;
   runtime_args_t const &m_rt_arguments;
   endpoint_t m_endpoints;
   beast::flat_buffer m_buffer{};
-  std::optional<http::response<http::file_body, http::basic_fields<alloc_t>>>
-      m_fileResponse = std::nullopt;
-  alloc_t m_fileAlloc{8'192};
-  std::optional<
-      http::response_serializer<http::file_body, http::basic_fields<alloc_t>>>
-      m_fileSerializer = std::nullopt;
+  std::optional<http::response<vector_body_t>> m_bufferResponse = std::nullopt;
   std::shared_ptr<void> m_cachedResponse = nullptr;
   std::optional<http::request_parser<http::string_body>> m_clientRequest =
       std::nullopt;
@@ -90,6 +85,8 @@ private:
   string_request_t m_thisRequest{};
 
 private:
+  void send_image_buffer(qad_screen_buffer_t &&image_buffer,
+                         string_request_t const &request);
   void shutdown_socket();
   void http_read_data();
   void on_data_read(beast::error_code ec, size_t);
@@ -105,7 +102,6 @@ private:
   void text_request_handler(url_query_t const &);
   void screen_request_handler(url_query_t const &);
   void screenshot_request_handler(url_query_t const &);
-  void send_file(std::filesystem::path const &, string_request_t const &);
 
 public:
   session_t(net::io_context &io, net::ip::tcp::socket &&socket,

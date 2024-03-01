@@ -199,7 +199,7 @@ page_flip_drm_t::~page_flip_drm_t() {
     close(file_descriptor);
 }
 
-void async_kms_page_flit_handler_t::run() {
+void async_kms_page_flip_handler_t::run() {
   if (m_streamDesc.has_value())
     return;
 
@@ -210,7 +210,7 @@ void async_kms_page_flit_handler_t::run() {
   set_next_timer();
 }
 
-void async_kms_page_flit_handler_t::on_ready_read(
+void async_kms_page_flip_handler_t::on_ready_read(
     boost::system::error_code const ec) {
   if (ec)
     return spdlog::error("Error occurred: {}", ec.message());
@@ -221,7 +221,7 @@ void async_kms_page_flit_handler_t::on_ready_read(
   drmHandleEvent(m_pageFlipDrm->file_descriptor, &m_pageFlipDrm->event_context);
 }
 
-void async_kms_page_flit_handler_t::set_next_timer() {
+void async_kms_page_flip_handler_t::set_next_timer() {
   // this keeps this object alive for as long as possible
   boost::system::error_code error_code{};
   m_timer.cancel(error_code);
@@ -232,7 +232,7 @@ void async_kms_page_flit_handler_t::set_next_timer() {
   });
 }
 
-void async_kms_page_flit_handler_t::on_page_flip_occurred() {
+void async_kms_page_flip_handler_t::on_page_flip_occurred() {
   {
     // cancel the keep-alive timer
     boost::system::error_code error_code{};
@@ -240,6 +240,7 @@ void async_kms_page_flit_handler_t::on_page_flip_occurred() {
   }
 
   // let's flip the current buffer on this write
+  std::lock_guard<std::mutex> lock_guard(m_mutex);
   m_pageFlipDrm->activated_buffer =
       m_pageFlipDrm->activated_buffer == 0 ? 1 : 0;
 
@@ -257,7 +258,7 @@ void async_kms_page_flit_handler_t::on_page_flip_occurred() {
   set_next_timer();
 }
 
-void async_kms_page_flit_handler_t::reset() {
+void async_kms_page_flip_handler_t::reset() {
   {
     // cancel the keep-alive timer
     boost::system::error_code error_code{};
@@ -266,5 +267,87 @@ void async_kms_page_flit_handler_t::reset() {
 
   m_streamDesc.reset();
   delete m_pageFlipDrm;
+  m_pageFlipDrm = nullptr;
+}
+
+image_data_t async_kms_page_flip_handler_t::image() {
+  image_data_t image{};
+  std::lock_guard<std::mutex> lock_guard(m_mutex);
+  //  auto const index = m_pageFlipDrm->activated_buffer == 0 ? 1 : 0;
+
+  return image;
+  //
+}
+
+// ==============================================
+
+void time_based_page_flip_handler_t::run() {
+  if (!m_timer.has_value())
+    return set_next_timer();
+}
+
+void time_based_page_flip_handler_t::set_next_timer() {
+  take_screenshot();
+
+  if (!m_timer.has_value())
+    m_timer.emplace(m_ioContext);
+
+  m_timer->expires_from_now(boost::posix_time::milliseconds(200));
+  m_timer->async_wait([self = shared_from_this()](auto const &ec) {
+    if (ec != net::error::operation_aborted)
+      self->set_next_timer();
+  });
+}
+
+void time_based_page_flip_handler_t::take_screenshot() {
+  auto fb = drmModeGetFB(m_fileDescriptor, m_crtc->buffer_id);
+  if (!fb) {
+    spdlog::error("Error getting frame buffer '{}': {}", m_crtc->buffer_id,
+                  strerror(errno));
+    return reset();
+  }
+
+  drm_mode_map_dumb dumb_map{};
+  dumb_map.handle = fb->handle;
+  dumb_map.offset = 0;
+
+  std::lock_guard<std::mutex> lock_guard(m_mutex);
+
+  m_index ^= 1; // flip the index
+  auto &buffer = m_imageBuffer[m_index];
+  auto const fb_size = fb->pitch * fb->height;
+  if (buffer.size != 0 && fb_size != buffer.size) {
+    munmap(buffer.ptr, buffer.size);
+    buffer.ptr = nullptr;
+  }
+
+  buffer.width = fb->width;
+  buffer.height = fb->height;
+  buffer.pitch = fb->pitch;
+  buffer.bpp = fb->bpp;
+
+  drmIoctl(m_fileDescriptor, DRM_IOCTL_MODE_MAP_DUMB, &dumb_map);
+  buffer.ptr = mmap(buffer.ptr, fb_size, PROT_READ, MAP_SHARED,
+                    m_fileDescriptor, __off_t(dumb_map.offset));
+  buffer.size = fb_size;
+  msync(buffer.ptr, buffer.size, 0);
+  drmModeFreeFB(fb);
+}
+
+image_data_t time_based_page_flip_handler_t::image() {
+  image_data_t image{};
+
+  std::lock_guard<std::mutex> lock_guard(m_mutex);
+  auto &buffer = m_imageBuffer[m_index];
+  if (!buffer.ptr)
+    return image;
+
+  write_png(buffer.ptr, (int)buffer.width, int(buffer.height),
+            int(buffer.pitch), (int)buffer.bpp, 0, image);
+  return image;
+}
+
+void time_based_page_flip_handler_t::reset() {
+  //
 }
 } // namespace qadx

@@ -51,6 +51,7 @@ using input_device_list_t = std::vector<input_device_mapping_t>;
 struct runtime_args_t {
   bool kms_format_rgb = false;
   bool verbose = false;
+  bool compress_image_rgb565 = false;
   int port = 0;
   screen_type_e screen_backend = screen_type_e::none;
   input_type_e input_backend = input_type_e::none;

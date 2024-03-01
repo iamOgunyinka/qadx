@@ -57,6 +57,7 @@ using qad_screen_buffer_t = std::vector<unsigned char>;
 struct image_data_t {
   qad_screen_buffer_t buffer;
   image_type_e type;
+  bool compress_to_rgb565 = false;
 };
 
 int encode_bmp(qad_screen_buffer_t const &data, int width, int height,

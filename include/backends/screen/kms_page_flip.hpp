@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "image.hpp"
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
@@ -66,23 +67,71 @@ struct page_flip_drm_t {
   ~page_flip_drm_t();
 };
 
-struct async_kms_page_flit_handler_t
-    : public std::enable_shared_from_this<async_kms_page_flit_handler_t> {
+struct page_flip_base_t {
   net::io_context &m_ioContext;
+
+  virtual image_data_t image() = 0;
+  virtual void run() = 0;
+  virtual void reset() = 0;
+  virtual void set_next_timer() = 0;
+  explicit page_flip_base_t(net::io_context &ioContext)
+      : m_ioContext(ioContext) {}
+  virtual ~page_flip_base_t() = default;
+};
+
+struct async_kms_page_flip_handler_t
+    : page_flip_base_t,
+      public std::enable_shared_from_this<async_kms_page_flip_handler_t> {
   page_flip_drm_t *m_pageFlipDrm = nullptr;
   std::optional<net::posix::stream_descriptor> m_streamDesc = std::nullopt;
   net::deadline_timer m_timer;
+  std::mutex m_mutex{};
 
-  async_kms_page_flit_handler_t(net::io_context &ioContext, page_flip_drm_t *p)
-      : m_ioContext(ioContext), m_pageFlipDrm(p), m_timer(m_ioContext) {}
-  ~async_kms_page_flit_handler_t() { reset(); }
-  void run();
+  async_kms_page_flip_handler_t(net::io_context &ioContext, page_flip_drm_t *p)
+      : page_flip_base_t(ioContext), m_pageFlipDrm(p), m_timer(m_ioContext) {}
+  ~async_kms_page_flip_handler_t() override { reset(); }
+  image_data_t image() final;
+  void run() override;
 
 private:
   void on_ready_read(boost::system::error_code ec);
   void on_page_flip_occurred();
-  void set_next_timer();
-  void reset();
+  void set_next_timer() override;
+  void reset() override;
+};
+
+struct time_based_page_flip_handler_t
+    : page_flip_base_t,
+      public std::enable_shared_from_this<time_based_page_flip_handler_t> {
+
+  struct internal_memory_t {
+    void *ptr = nullptr;
+    uint32_t size = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t pitch = 0;
+    uint32_t bpp = 0;
+  };
+
+  std::optional<net::deadline_timer> m_timer = std::nullopt;
+  std::mutex m_mutex{};
+  _drmModeCrtc *m_crtc;
+  internal_memory_t m_imageBuffer[2]{};
+  int const m_fileDescriptor;
+  size_t m_index;
+
+  explicit time_based_page_flip_handler_t(net::io_context &ioContext, int fd,
+                                          _drmModeCrtc *crtc)
+      : page_flip_base_t(ioContext), m_timer(std::nullopt), m_crtc(crtc),
+        m_fileDescriptor(fd), m_index(1) {}
+  ~time_based_page_flip_handler_t() override { reset(); }
+  image_data_t image() override;
+  void run() override;
+
+private:
+  void set_next_timer() override;
+  void reset() override;
+  void take_screenshot();
 };
 
 // defined in server.cpp

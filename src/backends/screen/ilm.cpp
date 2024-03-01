@@ -123,7 +123,7 @@ std::unique_ptr<ilm_screen_t> create_instance() {
 
   // Block until all pending request are processed by the server
   if (wl_display_roundtrip_queue(wd.display, wd.queue) == -1) {
-    spdlog::error("Failed to get globals");
+    spdlog::error("Failed to get globals: {}", strerror(errno));
     return nullptr;
   }
 
@@ -145,7 +145,8 @@ std::unique_ptr<ilm_screen_t> create_instance() {
   // Block until all pending request are processed by the server
   if (wl_display_roundtrip_queue(wd.display, wd.queue) == -1) {
     // do error check and free resources
-    spdlog::error("setting ivi_wm_screen listeners failed");
+    spdlog::error("setting ivi_wm_screen listeners failed: {}",
+                  strerror(errno));
     wl_display_disconnect(wd.display);
     return nullptr;
   }

@@ -62,19 +62,6 @@ int event_id_for(input_device_list_t const &device_list,
   return iter->event_number;
 }
 
-std::string save_image_to_file(image_data_t const &image) {
-  auto const temp_path =
-      (std::filesystem::temp_directory_path() / get_random_string(25)).string();
-  auto const extension = image.type == image_type_e::png ? "png" : "bmp";
-  auto const filename = fmt::format("{}.{}", temp_path, extension);
-  std::ofstream out_file(filename, std::ios::out | std::ios::binary);
-  if (!out_file)
-    return {};
-  out_file.write((char *)image.buffer.data(), image.buffer.size());
-  out_file.close();
-  return filename;
-}
-
 // =========================STATIC FUNCTIONS==============================
 namespace details {
 string_response_t get_error(std::string const &error_message,
@@ -328,7 +315,7 @@ void session_t::error_handler(string_response_t &&response, bool close_socket) {
 
 void session_t::on_data_written(beast::error_code ec, std::size_t const) {
   if (ec)
-    return spdlog::error(ec.message());
+    return spdlog::error("Data written error: {}", ec.message());
 
   m_cachedResponse = nullptr;
   http_read_data();
@@ -545,7 +532,6 @@ void session_t::text_request_handler(url_query_t const &) {
 }
 
 void session_t::screenshot_request_handler(url_query_t const &optional_query) {
-  spdlog::info("{} called", __func__);
   auto &request = m_thisRequest;
   auto screen_object = get_screen_object(m_rt_arguments);
   if (!screen_object) {
@@ -564,11 +550,12 @@ void session_t::screenshot_request_handler(url_query_t const &optional_query) {
   }
 
   image_data_t image{};
-  if (!screen_object->grab_frame_buffer(image, screen_id))
+  image.compress_to_rgb565 = m_rt_arguments.compress_image_rgb565;
+  if (!screen_object->grab_frame_buffer(image, screen_id)) {
     return error_handler(server_error("unable to get screenshot", request));
+  }
 
-  auto const filename = save_image_to_file(image);
-  send_file(filename, request);
+  send_image_buffer(std::move(image.buffer), request);
 }
 
 void session_t::screen_request_handler(url_query_t const &optional_query) {
@@ -584,25 +571,10 @@ void session_t::screen_request_handler(url_query_t const &optional_query) {
   return send_response(text_success(screen_object->list_screens(), request));
 }
 
-void session_t::send_file(std::filesystem::path const &file_path,
-                          string_request_t const &request) {
-  std::error_code ec_{};
-  if (!std::filesystem::exists(file_path, ec_))
-    return error_handler(bad_request("file does not exist", request));
-
-  http::file_body::value_type file;
-  beast::error_code ec{};
-  file.open(file_path.string().c_str(), beast::file_mode::read, ec);
-  if (ec) {
-    return error_handler(
-        server_error("unable to open file specified", request));
-  }
-
+void session_t::send_image_buffer(qad_screen_buffer_t &&image_buffer,
+                                  string_request_t const &request) {
   using http::field;
-
-  auto &response =
-      m_fileResponse.emplace(std::piecewise_construct, std::make_tuple(),
-                             std::make_tuple(m_fileAlloc));
+  auto &response = m_bufferResponse.emplace();
   response.result(http::status::ok);
   response.keep_alive(request.keep_alive());
   response.set(field::server, "qadx-server");
@@ -610,16 +582,13 @@ void session_t::send_file(std::filesystem::path const &file_path,
   response.set(field::access_control_allow_methods, "GET, POST");
   response.set(field::access_control_allow_headers,
                "Content-Type, Authorization");
-  response.body() = std::move(file);
+  response.body() = std::move(image_buffer);
   response.prepare_payload();
 
-  m_fileSerializer.emplace(*m_fileResponse);
-  http::async_write(m_tcpStream, *m_fileSerializer,
-                    [file_path, self = shared_from_this()](
-                        beast::error_code const ec, size_t const size_written) {
-                      self->m_fileSerializer.reset();
-                      self->m_fileResponse.reset();
-                      std::filesystem::remove(file_path);
+  http::async_write(m_tcpStream, *m_bufferResponse,
+                    [self = shared_from_this()](beast::error_code const ec,
+                                                size_t const size_written) {
+                      self->m_bufferResponse.reset();
                       self->on_data_written(ec, size_written);
                     });
 }

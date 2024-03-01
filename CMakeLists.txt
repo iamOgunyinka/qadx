@@ -98,7 +98,6 @@ set(HEADER_FILES
       include/backends/screen/kms.hpp
       include/server.hpp
       include/network_session.hpp
-      include/field_allocs.hpp
       include/string_utils.hpp
       include/backends/input.hpp
       include/arguments.hpp

@@ -31,13 +31,10 @@
 
 namespace qadx {
 void write_png_func(png_structp png_ptr, png_bytep data, png_size_t length) {
-  auto foo = (image_data_t *)png_get_io_ptr(png_ptr);
-  auto &buffer = foo->buffer;
-  size_t const buffer_size = buffer.size();
-  size_t const new_size = buffer_size + length;
-
-  buffer.resize(new_size);
-  memcpy(buffer.data() + buffer_size, data, length);
+  auto image_data_ptr = (image_data_t *)png_get_io_ptr(png_ptr);
+  size_t const buffer_size = image_data_ptr->buffer.size();
+  image_data_ptr->buffer.resize(buffer_size + length);
+  memcpy(image_data_ptr->buffer.data() + buffer_size, data, length);
 }
 
 void write_png(void *ptr, int const width, int const height, int const pitch,
@@ -49,7 +46,7 @@ void write_png(void *ptr, int const width, int const height, int const pitch,
   if (setjmp(png_jmpbuf(png_ptr)))
     throw std::runtime_error("unable to do setjmp");
 
-  png_set_compression_level(png_ptr, 1);
+  png_set_compression_level(png_ptr, 4);
   png_set_write_fn(png_ptr, &screen_buffer, write_png_func, nullptr);
 
   int const colour_type = PNG_COLOR_TYPE_RGB;
@@ -57,7 +54,6 @@ void write_png(void *ptr, int const width, int const height, int const pitch,
                PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
                PNG_FILTER_TYPE_DEFAULT);
   png_write_info(png_ptr, png_info_ptr);
-
   // TODO: Big assumption
   if (bpp == 32) {
     if (!rgb)

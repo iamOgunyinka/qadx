@@ -92,6 +92,7 @@ int main(int argc, char **argv) {
 
   qadx::cli_args_t args{};
   std::string kms_backend_card{};
+  bool compress_png_to_rgb565 = false;
 
   cli_parser.add_option("-p,--port", args.port,
                         "port to bind server to(default: 3465)");
@@ -106,10 +107,13 @@ int main(int argc, char **argv) {
   cli_parser.add_flag("-g,--guess-devices", args.guess_devices,
                       "guess input event IDs from their names(experimental)");
   cli_parser.add_flag("-V,--verbose", args.verbose, "set verbosity");
+  cli_parser.add_flag("-c,--compress", compress_png_to_rgb565,
+                      "kms-only compress image to rgb565");
   cli_parser.set_version_flag("-v,--version", QAD_VERSION);
   CLI11_PARSE(cli_parser, argc, argv)
 
   auto rt_args = qadx::create_backend_runtime_args(std::move(args));
+  rt_args.compress_image_rgb565 = compress_png_to_rgb565;
 
   if (rt_args.screen_backend == qadx::screen_type_e::kms) {
     if (kms_backend_card.empty()) {
